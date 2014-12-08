@@ -357,6 +357,12 @@ void bpf_register_prog_type(struct bpf_prog_type_list *tl)
 	list_add(&tl->list_node, &bpf_prog_types);
 }
 
+void bpf_unregister_prog_type(struct bpf_prog_type_list *tl)
+{
+	/* XXX: Safe? */
+	list_del(&tl->list_node, &bpf_prog_types);
+}
+
 /* fixup insn->imm field of bpf_call instructions:
  * if (insn->imm == BPF_FUNC_map_lookup_elem)
  *      insn->imm = bpf_map_lookup_elem - __bpf_call_base;

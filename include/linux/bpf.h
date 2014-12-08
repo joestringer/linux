@@ -114,6 +114,7 @@ struct bpf_prog_type_list {
 };
 
 void bpf_register_prog_type(struct bpf_prog_type_list *tl);
+void bpf_unregister_prog_type(struct bpf_prog_type_list *tl);
 
 struct bpf_prog;
 
