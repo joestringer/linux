@@ -20,6 +20,7 @@
 
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/bpf.h>
 #include <linux/if_arp.h>
 #include <linux/if_vlan.h>
 #include <linux/in.h>
@@ -2133,6 +2134,32 @@ static struct pernet_operations ovs_net_ops = {
 	.size = sizeof(struct ovs_net),
 };
 
+static const struct bpf_func_proto *ovs_func_proto(enum bpf_func_id func_id)
+{
+	/* XXX: Return handlers for functions we want. */
+
+	return NULL;
+}
+
+/* return true if 'size' wide access at offset 'off' within bpf_context
+ * with 'type' (read or write) is allowed
+ */
+bool ovs_is_valid_access(int off, int size, enum bpf_access_type type)
+{
+	/* XXX: What is bpf_context? */
+
+	return false;
+}
+static struct bpf_verifier_ops ovs_ops = {
+	.get_func_proto = ovs_func_proto,
+	.is_valid_access = ovs_is_valid_access,
+};
+
+static struct bpf_prog_type_list tl = {
+	.ops = &ovs_ops,
+	.type = BPF_PROG_TYPE_OPENVSWITCH,
+};
+
 static int __init dp_init(void)
 {
 	int err;
@@ -2173,6 +2200,7 @@ static int __init dp_init(void)
 	if (err < 0)
 		goto error_unreg_netdev;
 
+	bpf_register_prog_type(&tl);
 	return 0;
 
 error_unreg_netdev:
@@ -2195,6 +2223,7 @@ error:
 
 static void dp_cleanup(void)
 {
+	bpf_unregister_prog_type(&tl);
 	dp_unregister_genl(ARRAY_SIZE(dp_genl_families));
 	ovs_netdev_exit();
 	unregister_netdevice_notifier(&ovs_dp_device_notifier);
