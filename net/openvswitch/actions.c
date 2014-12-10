@@ -25,6 +25,7 @@
 #include <linux/sctp.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
+#include <linux/bpf.h>
 #include <linux/in6.h>
 #include <linux/if_arp.h>
 #include <linux/if_vlan.h>
@@ -746,6 +747,40 @@ static int execute_recirc(struct datapath *dp, struct sk_buff *skb,
 	return 0;
 }
 
+static int execute_bpf(struct sk_buff *skb, struct sw_flow_key *key,
+		       const struct nlattr *a)
+{
+	struct bpf_prog *prog;
+	unsigned int pkt_len;
+	int ufd, err;
+
+	BUG_ON(nla_len(a) != sizeof(s64));
+	ufd = nla_get_s64(a);
+
+	prog = bpf_prog_get(ufd);
+	if (!prog)
+		return -EINVAL;
+
+	if (prog->aux->prog_type != BPF_PROG_TYPE_OPENVSWITCH) {
+		bpf_prog_put(prog);
+		return -EINVAL;
+	}
+
+	/* XXX: What's the BPF function interface meant to be?
+	 * -N: error code N
+	 *  0: drop
+	 * +N: final packet length
+	 */
+	pkt_len = prog->bpf_func(ctx, prog->insnsi);
+
+	/* XXX: Doesn't handle packet enlargement. */
+	err = pkt_len ? pskb_trim(skb, pkt_len) : -EPERM; /* Drop */
+	if (err)
+		return err;
+
+	return 0; /* Keep */
+}
+
 /* Execute a list of actions against 'skb'. */
 static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 			      struct sw_flow_key *key,
@@ -811,6 +846,10 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 				 */
 				return err;
 			}
+			break;
+
+		case OVS_ACTION_ATTR_BPF:
+			err = execute_bpf(skb, key, a);
 			break;
 
 		case OVS_ACTION_ATTR_SET:
