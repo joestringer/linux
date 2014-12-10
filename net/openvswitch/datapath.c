@@ -2134,25 +2134,21 @@ static struct pernet_operations ovs_net_ops = {
 	.size = sizeof(struct ovs_net),
 };
 
-static const struct bpf_func_proto *ovs_func_proto(enum bpf_func_id func_id)
+static const struct bpf_func_proto *verifier_func(enum bpf_func_id func_id)
 {
-	/* XXX: Return handlers for functions we want. */
-
 	return NULL;
 }
 
 /* return true if 'size' wide access at offset 'off' within bpf_context
  * with 'type' (read or write) is allowed
  */
-bool ovs_is_valid_access(int off, int size, enum bpf_access_type type)
+static bool valid_context_access(int off, int size, enum bpf_access_type type)
 {
-	/* XXX: What is bpf_context? */
-
 	return false;
 }
 static struct bpf_verifier_ops ovs_ops = {
-	.get_func_proto = ovs_func_proto,
-	.is_valid_access = ovs_is_valid_access,
+	.get_func_proto = verifier_func,
+	.is_valid_access = valid_context_access,
 };
 
 static struct bpf_prog_type_list tl = {
