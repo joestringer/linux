@@ -61,6 +61,33 @@ int ovs_bpf_init(void)
 
 void ovs_bpf_exit(void)
 {
+	/* XXX: bpf_prog_put() each prog. */
+
 	flex_array_free(bpf_callbacks);
 	bpf_unregister_prog_type(&tl);
+}
+
+struct bpf_prog *ovs_bpf_lookup(u32 fd)
+{
+	struct bpf_prog *prog;
+
+	prog = flex_array_get_ptr(bpf_callbacks, fd);
+	if (prog)
+		return prog;
+
+	prog = bpf_prog_get(fd);
+	if (!prog)
+		return NULL;
+
+	if (prog->aux->prog_type != BPF_PROG_TYPE_OPENVSWITCH) {
+		bpf_prog_put(prog);
+		return NULL;
+	}
+
+	/* If this is the first time seeing this program, fetch a reference
+	 * and hold on to it until ovs_bpf_exit().
+	 */
+	flex_array_put_ptr(bpf_callbacks, fd, prog, GFP_KERNEL);
+
+	return prog;
 }

@@ -39,6 +39,7 @@
 
 #include "datapath.h"
 #include "flow.h"
+#include "ovs-bpf.h"
 #include "vport.h"
 
 static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
@@ -757,21 +758,16 @@ static int execute_bpf(struct sk_buff *skb, struct sw_flow_key *key,
 	BUG_ON(nla_len(a) != sizeof(s64));
 	ufd = nla_get_s64(a);
 
-	prog = bpf_prog_get(ufd);
+	prog = ovs_bpf_lookup(ufd);
 	if (!prog)
 		return -EINVAL;
-
-	if (prog->aux->prog_type != BPF_PROG_TYPE_OPENVSWITCH) {
-		bpf_prog_put(prog);
-		return -EINVAL;
-	}
 
 	/* XXX: What's the BPF function interface meant to be?
 	 * -N: error code N
 	 *  0: drop
 	 * +N: final packet length
 	 */
-	pkt_len = prog->bpf_func(ctx, prog->insnsi);
+	pkt_len = prog->bpf_func(skb, prog->insnsi);
 
 	/* XXX: Doesn't handle packet enlargement. */
 	err = pkt_len ? pskb_trim(skb, pkt_len) : -EPERM; /* Drop */
@@ -848,7 +844,7 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 			}
 			break;
 
-		case OVS_ACTION_ATTR_BPF:
+		case OVS_ACTION_ATTR_BPF_PROG:
 			err = execute_bpf(skb, key, a);
 			break;
 

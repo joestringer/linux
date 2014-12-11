@@ -49,6 +49,7 @@
 #include <net/mpls.h>
 
 #include "flow_netlink.h"
+#include "ovs-bpf.h"
 
 static void update_range(struct sw_flow_match *match,
 			 size_t offset, size_t size, bool is_mask)
@@ -1771,6 +1772,7 @@ static int __ovs_nla_copy_actions(const struct nlattr *attr,
 			[OVS_ACTION_ATTR_POP_VLAN] = 0,
 			[OVS_ACTION_ATTR_SET] = (u32)-1,
 			[OVS_ACTION_ATTR_SAMPLE] = (u32)-1,
+			[OVS_ACTION_ATTR_BPF_PROG] = sizeof(struct ovs_action_bpf_prog),
 			[OVS_ACTION_ATTR_HASH] = sizeof(struct ovs_action_hash)
 		};
 		const struct ovs_action_push_vlan *vlan;
@@ -1828,6 +1830,14 @@ static int __ovs_nla_copy_actions(const struct nlattr *attr,
 
 		case OVS_ACTION_ATTR_RECIRC:
 			break;
+
+		case OVS_ACTION_ATTR_BPF_PROG: {
+			const struct ovs_action_bpf_prog *bpf = nla_data(a);
+
+			if (!ovs_bpf_lookup(bpf->prog_id))
+				return -EINVAL;
+			break;
+		}
 
 		case OVS_ACTION_ATTR_PUSH_MPLS: {
 			const struct ovs_action_push_mpls *mpls = nla_data(a);
