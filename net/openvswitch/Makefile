@@ -5,6 +5,7 @@
 obj-$(CONFIG_OPENVSWITCH) += openvswitch.o
 
 openvswitch-y := \
+	ovs-bpf.o \
 	actions.o \
 	datapath.o \
 	dp_notify.o \
