@@ -64,7 +64,15 @@ int ovs_bpf_init(void)
 
 void ovs_bpf_exit(void)
 {
-	/* XXX: bpf_prog_put() each prog. */
+	int i;
+
+	for (i = 0; i < MAX_FD; i++) {
+		struct bpf_prog *prog;
+
+		prog = flex_array_get_ptr(bpf_callbacks, i);
+		if (prog)
+			bpf_prog_put(prog);
+	}
 
 	flex_array_free(bpf_callbacks);
 	bpf_unregister_prog_type(&tl);
