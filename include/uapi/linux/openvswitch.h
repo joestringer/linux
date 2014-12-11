@@ -519,6 +519,17 @@ struct ovs_action_push_mpls {
 };
 
 /**
+ * struct ovs_action_bpf_prog - %OVS_ACTION_ATTR_BPF_PROG action argument.
+ *
+ *  XXX provides bpf program id and execution context.
+ *
+ */
+struct ovs_action_bpf_prog {
+	__be32 prog_id;
+	__be64 arg;
+};
+
+/**
  * struct ovs_action_push_vlan - %OVS_ACTION_ATTR_PUSH_VLAN action argument.
  * @vlan_tpid: Tag protocol identifier (TPID) to push.
  * @vlan_tci: Tag control identifier (TCI) to push.  The CFI bit must be set
@@ -579,7 +590,7 @@ struct ovs_action_hash {
  * %ETH_P_MPLS if the resulting MPLS label stack is not empty.  If there
  * is no MPLS label stack, as determined by ethertype, no action is taken.
  *
- * XXX: @OVS_ACTION_ATTR_BPF
+ * XXX: @OVS_ACTION_ATTR_BPF_PROG
  *
  * Only a single header can be set with a single %OVS_ACTION_ATTR_SET.  Not all
  * fields within a header are modifiable, e.g. the IPv4 protocol and fragment
@@ -598,7 +609,7 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_HASH,	      /* struct ovs_action_hash. */
 	OVS_ACTION_ATTR_PUSH_MPLS,    /* struct ovs_action_push_mpls. */
 	OVS_ACTION_ATTR_POP_MPLS,     /* __be16 ethertype. */
-	OVS_ACTION_ATTR_BPF,	      /* Nested OVS_BPF_ATTR_*. */
+	OVS_ACTION_ATTR_BPF_PROG,     /* struct ovs_action_bpf_prog. */
 
 	__OVS_ACTION_ATTR_MAX
 };
