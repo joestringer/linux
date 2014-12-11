@@ -20,6 +20,7 @@
 #include <linux/module.h>
 #include <linux/uaccess.h>
 #include <trace/bpf_trace.h>
+#include <trace/events/syscalls.h>
 
 #include "trace_probe.h"
 
