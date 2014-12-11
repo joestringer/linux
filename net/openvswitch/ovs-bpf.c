@@ -25,6 +25,9 @@
 
 struct flex_array *bpf_callbacks;
 
+/* XXX */
+#define MAX_FD 1024
+
 static const struct bpf_func_proto *verifier_func(enum bpf_func_id func_id)
 {
 	return NULL;
@@ -50,7 +53,7 @@ static struct bpf_prog_type_list tl = {
 
 int ovs_bpf_init(void)
 {
-	bpf_callbacks = flex_array_alloc(sizeof(struct bpf_prog *), 1024,
+	bpf_callbacks = flex_array_alloc(sizeof(struct bpf_prog *), MAX_FD,
 					 GFP_KERNEL);
 	if (!bpf_callbacks)
 		return -ENOMEM;
@@ -70,6 +73,10 @@ void ovs_bpf_exit(void)
 struct bpf_prog *ovs_bpf_lookup(u32 fd)
 {
 	struct bpf_prog *prog;
+
+	/* Should resize rather than reject FDs > 1024. */
+	if (fd > MAX_FD)
+		return NULL;
 
 	prog = flex_array_get_ptr(bpf_callbacks, fd);
 	if (prog)
