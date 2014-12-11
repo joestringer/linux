@@ -751,14 +751,13 @@ static int execute_recirc(struct datapath *dp, struct sk_buff *skb,
 static int execute_bpf(struct sk_buff *skb, struct sw_flow_key *key,
 		       const struct nlattr *a)
 {
+	struct ovs_action_bpf_prog *bpf;
 	struct bpf_prog *prog;
 	unsigned int pkt_len;
-	int ufd, err;
+	int err;
 
-	BUG_ON(nla_len(a) != sizeof(s64));
-	ufd = nla_get_s64(a);
-
-	prog = ovs_bpf_lookup(ufd);
+	bpf = nla_data(a);
+	prog = ovs_bpf_lookup(bpf->prog_id);
 	if (!prog)
 		return -EINVAL;
 
