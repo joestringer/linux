@@ -17,7 +17,7 @@
  */
 
 #ifndef OVS_BPF_H
-#define OVS_BPF_H
+#define OVS_BPF_H 1
 
 #include <linux/types.h>
 
