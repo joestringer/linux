@@ -356,12 +356,14 @@ void bpf_register_prog_type(struct bpf_prog_type_list *tl)
 {
 	list_add(&tl->list_node, &bpf_prog_types);
 }
+EXPORT_SYMBOL_GPL(bpf_register_prog_type);
 
 void bpf_unregister_prog_type(struct bpf_prog_type_list *tl)
 {
 	/* XXX: Safe? */
 	list_del(&tl->list_node);
 }
+EXPORT_SYMBOL_GPL(bpf_unregister_prog_type);
 
 /* fixup insn->imm field of bpf_call instructions:
  * if (insn->imm == BPF_FUNC_map_lookup_elem)
@@ -415,6 +417,7 @@ void bpf_prog_put(struct bpf_prog *prog)
 		bpf_prog_free(prog);
 	}
 }
+EXPORT_SYMBOL_GPL(bpf_prog_put);
 
 static int bpf_prog_release(struct inode *inode, struct file *filp)
 {
@@ -462,6 +465,7 @@ struct bpf_prog *bpf_prog_get(u32 ufd)
 	fdput(f);
 	return prog;
 }
+EXPORT_SYMBOL_GPL(bpf_prog_get);
 
 /* last field in 'union bpf_attr' used by this command */
 #define	BPF_PROG_LOAD_LAST_FIELD log_buf
