@@ -7,6 +7,9 @@
 #ifndef _LINUX_KERNEL_BPF_TRACE_H
 #define _LINUX_KERNEL_BPF_TRACE_H
 
+struct bpf_func_proto;
+enum bpf_func_id;
+
 /* For tracing filters save first six arguments of tracepoint events.
  * argN fields match one to one to arguments passed to tracepoint events.
  */
@@ -19,5 +22,7 @@ struct bpf_context {
 	u64 arg6;
 	u64 ret;
 };
+
+const struct bpf_func_proto *tracing_filter_func_proto(enum bpf_func_id);
 
 #endif /* _LINUX_KERNEL_BPF_TRACE_H */

@@ -169,7 +169,7 @@ static struct bpf_func_proto tracing_filter_funcs[] = {
 	},
 };
 
-static const struct bpf_func_proto *tracing_filter_func_proto(enum bpf_func_id func_id)
+const struct bpf_func_proto *tracing_filter_func_proto(enum bpf_func_id func_id)
 {
 	switch (func_id) {
 	case BPF_FUNC_map_lookup_elem:
@@ -184,6 +184,7 @@ static const struct bpf_func_proto *tracing_filter_func_proto(enum bpf_func_id f
 		return &tracing_filter_funcs[func_id];
 	}
 }
+EXPORT_SYMBOL_GPL(tracing_filter_func_proto);
 
 static const struct bpf_context_access {
 	int size;
