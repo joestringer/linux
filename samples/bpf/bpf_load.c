@@ -216,6 +216,9 @@ int load_bpf_file(char *path)
 			if (memcmp(shname_prog, "events/", 7) == 0 ||
 			    memcmp(shname_prog, "socket", 6) == 0)
 				load_and_attach(shname_prog, insns, data_prog->d_size);
+			else
+
+				load(BPF_PROG_TYPE_OPENVSWITCH, insns, data_prog->d_size, NULL);
 		}
 	}
 
@@ -231,6 +234,8 @@ int load_bpf_file(char *path)
 		if (memcmp(shname, "events/", 7) == 0 ||
 		    memcmp(shname, "socket", 6) == 0)
 			load_and_attach(shname, data->d_buf, data->d_size);
+		else
+			load(BPF_PROG_TYPE_OPENVSWITCH, data->d_buf, data_prog->d_size, NULL);
 	}
 
 	close(fd);
