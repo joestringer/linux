@@ -44,4 +44,4 @@ LLC=$(srctree)/tools/bpf/llvm/bld/Debug+Asserts/bin/llc
 %.o: %.c
 	clang $(NOSTDINC_FLAGS) $(LINUXINCLUDE) $(EXTRA_CFLAGS) \
 		-D__KERNEL__ -Wno-unused-value -Wno-pointer-sign \
-		-O2 -emit-llvm -c $< -o -| $(LLC) -march=bpf -filetype=obj -o $@
+		-O2 -emit-llvm -c $< -o -| $(LLC) -filetype=obj -o $@
