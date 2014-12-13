@@ -20,6 +20,7 @@
 #include <linux/bpf.h>
 #include <linux/filter.h>
 #include <linux/flex_array.h>
+#include <trace/bpf_trace.h>
 
 #include "ovs-bpf.h"
 
@@ -30,6 +31,12 @@ struct flex_array *bpf_callbacks;
 
 static const struct bpf_func_proto *verifier_func(enum bpf_func_id func_id)
 {
+	switch (func_id) {
+	case BPF_FUNC_printk:
+		return tracing_filter_func_proto(func_id);
+	default:
+		break;
+	}
 	return NULL;
 }
 
