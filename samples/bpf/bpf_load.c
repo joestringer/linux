@@ -22,6 +22,26 @@ int map_fd[MAX_MAPS];
 int prog_fd[MAX_PROGS];
 int prog_cnt;
 
+static int load(int type, struct bpf_insn *prog, int size, int *fd_out)
+{
+	int fd, err;
+
+	fd = bpf_prog_load(type,
+			   prog, size, license);
+	if (fd < 0) {
+		printf("bpf_prog_load() err=%d\n%s", errno, bpf_log_buf);
+		return -1;
+	}
+
+	prog_fd[prog_cnt++] = fd;
+	if (fd_out)
+		*fd_out = fd;
+
+	printf("Loaded bpf prog, got fd=%d\n", fd);
+
+	return 0;
+}
+
 static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 {
 	bool is_socket = strncmp(event, "socket", 6) == 0;
@@ -29,16 +49,11 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 	char fmt[32];
 	int fd, event_fd, err;
 
-	fd = bpf_prog_load(is_socket ? BPF_PROG_TYPE_SOCKET_FILTER :
-				       BPF_PROG_TYPE_TRACING_FILTER,
-			   prog, size, license);
-
-	if (fd < 0) {
-		printf("bpf_prog_load() err=%d\n%s", errno, bpf_log_buf);
-		return -1;
-	}
-
-	prog_fd[prog_cnt++] = fd;
+	err = load(is_socket ? BPF_PROG_TYPE_SOCKET_FILTER :
+			       BPF_PROG_TYPE_TRACING_FILTER,
+		   prog, size, &fd);
+	if (err)
+		return err;
 
 	if (is_socket)
 		return 0;
