@@ -10,6 +10,7 @@ hostprogs-y += dropmon
 hostprogs-y += ex1
 hostprogs-y += ex2
 hostprogs-y += ex3
+hostprogs-y += simple_load
 
 dropmon-objs := dropmon.o libbpf.o
 test_verifier-objs := test_verifier.o libbpf.o
@@ -20,6 +21,7 @@ sockex2-objs := bpf_load.o libbpf.o sockex2_user.o
 ex1-objs := bpf_load.o libbpf.o ex1_user.o
 ex2-objs := bpf_load.o libbpf.o ex2_user.o
 ex3-objs := bpf_load.o libbpf.o ex3_user.o
+simple_load-objs := bpf_load.o libbpf.o simple_load.o
 
 # Tell kbuild to always build the programs
 always := $(hostprogs-y)
@@ -37,6 +39,7 @@ HOSTLOADLIBES_sockex2 += -lelf
 HOSTLOADLIBES_ex1 += -lelf
 HOSTLOADLIBES_ex2 += -lelf
 HOSTLOADLIBES_ex3 += -lelf
+HOSTLOADLIBES_simple_load += -lelf
 
 # point this to your LLVM backend with bpf support
 LLC=$(srctree)/tools/bpf/llvm/bld/Debug+Asserts/bin/llc
