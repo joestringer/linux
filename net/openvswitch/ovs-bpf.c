@@ -31,6 +31,8 @@ struct flex_array *bpf_callbacks;
 
 static const struct bpf_func_proto *verifier_func(enum bpf_func_id func_id)
 {
+	printk("verifier_func(%d)\n", func_id);
+
 	switch (func_id) {
 	case BPF_FUNC_printk:
 		return tracing_filter_func_proto(func_id);
@@ -46,6 +48,7 @@ static const struct bpf_func_proto *verifier_func(enum bpf_func_id func_id)
 static bool valid_context_access(int off, int size, enum bpf_access_type type)
 {
 	/* XXX: Sanity check */
+	printk("valid_context_access(%d, %d, %d)\n", off, size, type);
 	return true;
 }
 
@@ -61,6 +64,8 @@ static struct bpf_prog_type_list tl = {
 
 int ovs_bpf_init(void)
 {
+	printk("ovs_bpf_init()\n");
+
 	bpf_callbacks = flex_array_alloc(sizeof(struct bpf_prog *), MAX_FD,
 					 GFP_KERNEL);
 	if (!bpf_callbacks)
