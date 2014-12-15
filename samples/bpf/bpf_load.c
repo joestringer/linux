@@ -235,7 +235,7 @@ int load_bpf_file(char *path)
 		    memcmp(shname, "socket", 6) == 0)
 			load_and_attach(shname, data->d_buf, data->d_size);
 		else
-			load(BPF_PROG_TYPE_OPENVSWITCH, data->d_buf, data_prog->d_size, NULL);
+			load(BPF_PROG_TYPE_OPENVSWITCH, data->d_buf, data->d_size, NULL);
 	}
 
 	close(fd);
