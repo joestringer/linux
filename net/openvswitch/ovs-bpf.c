@@ -45,7 +45,8 @@ static const struct bpf_func_proto *verifier_func(enum bpf_func_id func_id)
  */
 static bool valid_context_access(int off, int size, enum bpf_access_type type)
 {
-	return false;
+	/* XXX: Sanity check */
+	return true;
 }
 
 static struct bpf_verifier_ops ovs_ops = {
