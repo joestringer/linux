@@ -609,6 +609,7 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_HASH,	      /* struct ovs_action_hash. */
 	OVS_ACTION_ATTR_PUSH_MPLS,    /* struct ovs_action_push_mpls. */
 	OVS_ACTION_ATTR_POP_MPLS,     /* __be16 ethertype. */
+	OVS_ACTION_ATTR_SET_MASKED,   /* XXX */
 	OVS_ACTION_ATTR_BPF_PROG,     /* struct ovs_action_bpf_prog. */
 
 	__OVS_ACTION_ATTR_MAX
