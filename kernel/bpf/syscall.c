@@ -438,10 +438,8 @@ static struct bpf_prog *get_prog(struct fd f)
 	if (!f.file)
 		return ERR_PTR(-EBADF);
 
-	if (f.file->f_op != &bpf_prog_fops) {
-		fdput(f);
+	if (f.file->f_op != &bpf_prog_fops)
 		return ERR_PTR(-EINVAL);
-	}
 
 	prog = f.file->private_data;
 
@@ -457,11 +455,12 @@ struct bpf_prog *bpf_prog_get(u32 ufd)
 	struct bpf_prog *prog;
 
 	prog = get_prog(f);
-
 	if (IS_ERR(prog))
-		return prog;
+		goto exit;
 
 	atomic_inc(&prog->aux->refcnt);
+
+exit:
 	fdput(f);
 	return prog;
 }
