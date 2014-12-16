@@ -104,7 +104,7 @@ struct bpf_prog *ovs_bpf_lookup(u32 fd)
 		return prog;
 
 	prog = bpf_prog_get(fd);
-	if (!prog)
+	if (IS_ERR(prog))
 		return NULL;
 
 	if (prog->aux->prog_type != BPF_PROG_TYPE_OPENVSWITCH) {
