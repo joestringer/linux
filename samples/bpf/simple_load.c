@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <unistd.h>
-#include <stdlib.h>
 #include <linux/bpf.h>
 #include "libbpf.h"
 #include "bpf_load.h"
