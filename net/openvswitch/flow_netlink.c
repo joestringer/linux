@@ -1741,8 +1741,10 @@ static int copy_action(const struct nlattr *from,
 	struct nlattr *to;
 
 	to = reserve_sfa_size(sfa, from->nla_len, log);
-	if (IS_ERR(to))
+	if (IS_ERR(to)) {
+		OVS_NLERR(true, "copy_action() error...");
 		return PTR_ERR(to);
+	}
 
 	memcpy(to, from, totlen);
 	return 0;
@@ -1759,6 +1761,8 @@ static int __ovs_nla_copy_actions(const struct nlattr *attr,
 
 	if (depth >= SAMPLE_ACTION_DEPTH)
 		return -EOVERFLOW;
+
+	OVS_NLERR(true, "__ovs_nla_copy_actions()");
 
 	nla_for_each_nested(a, attr, rem) {
 		/* Expected argument lengths, (u32)-1 for variable length. */
@@ -1781,8 +1785,12 @@ static int __ovs_nla_copy_actions(const struct nlattr *attr,
 
 		if (type > OVS_ACTION_ATTR_MAX ||
 		    (action_lens[type] != nla_len(a) &&
-		     action_lens[type] != (u32)-1))
+		     action_lens[type] != (u32)-1)) {
+			OVS_NLERR(true, "Invalid action size (type %d, len %d, explen %d)",
+				  type, nla_len(a), action_lens[type]);
+			OVS_NLERR(true, "(MAX_ATTR is %d)", OVS_ACTION_ATTR_MAX);
 			return -EINVAL;
+		}
 
 		skip_copy = false;
 		switch (type) {
@@ -1909,8 +1917,10 @@ static int __ovs_nla_copy_actions(const struct nlattr *attr,
 		}
 	}
 
-	if (rem > 0)
+	if (rem > 0) {
+		OVS_NLERR(true, "Remaining uninterpreted action bytes");
 		return -EINVAL;
+	}
 
 	return 0;
 }

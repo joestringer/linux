@@ -477,8 +477,12 @@ static int bpf_prog_load(union bpf_attr *attr)
 	char license[128];
 	bool is_gpl;
 
-	if (CHECK_ATTR(BPF_PROG_LOAD))
+	printk("bpf_prog_load()\n");
+
+	if (CHECK_ATTR(BPF_PROG_LOAD)) {
+		printk("CHECK_ATTR failed\n");
 		return -EINVAL;
+	}
 
 	/* copy eBPF program license from user space */
 	if (strncpy_from_user(license, u64_to_ptr(attr->license),
@@ -489,8 +493,10 @@ static int bpf_prog_load(union bpf_attr *attr)
 	/* eBPF programs must be GPL compatible to use GPL-ed functions */
 	is_gpl = license_is_gpl_compatible(license);
 
-	if (attr->insn_cnt >= BPF_MAXINSNS)
+	if (attr->insn_cnt >= BPF_MAXINSNS) {
+		printk("BPF instruction maximum exceeded\n");
 		return -EINVAL;
+	}
 
 	/* plain bpf_prog allocation */
 	prog = bpf_prog_alloc(bpf_prog_size(attr->insn_cnt), GFP_USER);
@@ -512,14 +518,18 @@ static int bpf_prog_load(union bpf_attr *attr)
 
 	/* find program type: socket_filter vs tracing_filter */
 	err = find_prog_type(type, prog);
-	if (err < 0)
+	if (err < 0) {
+		printk("find_prog_type() failed\n");
 		goto free_prog;
+	}
 
 	/* run eBPF verifier */
 	err = bpf_check(prog, attr);
 
-	if (err < 0)
+	if (err < 0) {
+		printk("bpf_check() failed\n");
 		goto free_used_maps;
+	}
 
 	/* fixup BPF_CALL->imm field */
 	fixup_bpf_calls(prog);
@@ -529,9 +539,13 @@ static int bpf_prog_load(union bpf_attr *attr)
 
 	err = anon_inode_getfd("bpf-prog", &bpf_prog_fops, prog, O_RDWR | O_CLOEXEC);
 
-	if (err < 0)
+	if (err < 0) {
 		/* failed to allocate fd */
+		printk("anon_inode_getfd() failed\n");
 		goto free_used_maps;
+        }
+
+	printk("bpf_prog_load() got fd %d\n", err);
 
 	return err;
 

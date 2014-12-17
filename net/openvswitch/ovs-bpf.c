@@ -22,6 +22,7 @@
 #include <linux/flex_array.h>
 #include <trace/bpf_trace.h>
 
+#include "datapath.h"
 #include "ovs-bpf.h"
 
 struct flex_array *bpf_callbacks;
@@ -104,8 +105,10 @@ struct bpf_prog *ovs_bpf_lookup(u32 fd)
 		return prog;
 
 	prog = bpf_prog_get(fd);
-	if (IS_ERR(prog))
+	if (IS_ERR(prog)) {
+		OVS_NLERR(true, "bpf_prog_get() returned %ld", PTR_ERR(prog));
 		return NULL;
+	}
 
 	if (prog->aux->prog_type != BPF_PROG_TYPE_OPENVSWITCH) {
 		bpf_prog_put(prog);

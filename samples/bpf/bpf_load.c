@@ -170,6 +170,8 @@ int load_bpf_file(char *path)
 	if (gelf_getehdr(elf, &ehdr) != &ehdr)
 		return 1;
 
+	printf("get_license\n");
+
 	/* scan over all elf sections to get license and map info */
 	for (i = 1; i < ehdr.e_shnum; i++) {
 
@@ -192,6 +194,8 @@ int load_bpf_file(char *path)
 			symbols = data;
 		}
 	}
+
+	printf("relocate\n");
 
 	/* load programs that need map fixup (relocations) */
 	for (i = 1; i < ehdr.e_shnum; i++) {
@@ -222,6 +226,8 @@ int load_bpf_file(char *path)
 		}
 	}
 
+	printf("load\n");
+
 	/* load programs that don't use maps */
 	for (i = 1; i < ehdr.e_shnum; i++) {
 
@@ -230,6 +236,11 @@ int load_bpf_file(char *path)
 
 		if (get_sec(elf, i, &ehdr, &shname, &shdr, &data))
 			continue;
+
+		if (1) /* helpful for llvm debugging */
+			printf("section %d:%s data %p size %zd link %d flags %d\n",
+			       i, shname, data->d_buf, data->d_size,
+			       shdr.sh_link, (int) shdr.sh_flags);
 
 		if (memcmp(shname, "events/", 7) == 0 ||
 		    memcmp(shname, "socket", 6) == 0)
