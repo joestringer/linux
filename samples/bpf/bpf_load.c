@@ -245,7 +245,7 @@ int load_bpf_file(char *path)
 		if (memcmp(shname, "events/", 7) == 0 ||
 		    memcmp(shname, "socket", 6) == 0)
 			load_and_attach(shname, data->d_buf, data->d_size);
-		else if (memcmp(shname_prog, "ovs", 3) == 0)
+		else if (memcmp(shname, "ovs", 3) == 0)
 			load(BPF_PROG_TYPE_OPENVSWITCH, data->d_buf, data->d_size, NULL);
 	}
 
