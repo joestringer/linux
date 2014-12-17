@@ -1842,7 +1842,7 @@ static int __ovs_nla_copy_actions(const struct nlattr *attr,
 		case OVS_ACTION_ATTR_BPF_PROG: {
 			const struct ovs_action_bpf_prog *bpf = nla_data(a);
 
-			if (!ovs_bpf_lookup(bpf->prog_id))
+			if (!ovs_bpf_lookup(ntohl(bpf->prog_id)))
 				return -EINVAL;
 			break;
 		}

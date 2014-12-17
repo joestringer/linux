@@ -757,7 +757,7 @@ static int execute_bpf(struct sk_buff *skb, struct sw_flow_key *key,
 	int err;
 
 	bpf = nla_data(a);
-	prog = ovs_bpf_lookup(bpf->prog_id);
+	prog = ovs_bpf_lookup(ntohl(bpf->prog_id));
 	if (!prog)
 		return -EINVAL;
 
