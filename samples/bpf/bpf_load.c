@@ -29,7 +29,8 @@ static int load(int type, struct bpf_insn *prog, int size, int *fd_out)
 	fd = bpf_prog_load(type,
 			   prog, size, license);
 	if (fd < 0) {
-		printf("bpf_prog_load() err=%d\n%s", errno, bpf_log_buf);
+		printf("bpf_prog_load() Error:%s\n%s",
+			strerror(errno), bpf_log_buf);
 		return -1;
 	}
 
@@ -220,8 +221,7 @@ int load_bpf_file(char *path)
 			if (memcmp(shname_prog, "events/", 7) == 0 ||
 			    memcmp(shname_prog, "socket", 6) == 0)
 				load_and_attach(shname_prog, insns, data_prog->d_size);
-			else
-
+			else if (memcmp(shname_prog, "ovs", 3) == 0)
 				load(BPF_PROG_TYPE_OPENVSWITCH, insns, data_prog->d_size, NULL);
 		}
 	}
@@ -245,7 +245,7 @@ int load_bpf_file(char *path)
 		if (memcmp(shname, "events/", 7) == 0 ||
 		    memcmp(shname, "socket", 6) == 0)
 			load_and_attach(shname, data->d_buf, data->d_size);
-		else
+		else if (memcmp(shname_prog, "ovs", 3) == 0)
 			load(BPF_PROG_TYPE_OPENVSWITCH, data->d_buf, data->d_size, NULL);
 	}
 
