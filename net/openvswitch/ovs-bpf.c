@@ -96,6 +96,8 @@ struct bpf_prog *ovs_bpf_lookup(u32 fd)
 {
 	struct bpf_prog *prog;
 
+	OVS_NLERR(true, "ovs_bpf_lookup(%d)", fd);
+
 	/* Should resize rather than reject FDs > 1024. */
 	if (fd > MAX_FD)
 		return NULL;
@@ -111,6 +113,7 @@ struct bpf_prog *ovs_bpf_lookup(u32 fd)
 	}
 
 	if (prog->aux->prog_type != BPF_PROG_TYPE_OPENVSWITCH) {
+		OVS_NLERR(true, "prog_type != BPF_PROG_TYPE_OPENVSWITCH");
 		bpf_prog_put(prog);
 		return NULL;
 	}
