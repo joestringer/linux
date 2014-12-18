@@ -78,6 +78,10 @@ int ovs_bpf_init(void)
 
 void ovs_bpf_exit(void)
 {
+	/* XXX: Don't put the programs back; their lifetime follows the process
+	 * that loaded them, not the refcounting that happens here.
+	 */
+	/*
 	int i;
 
 	for (i = 0; i < MAX_FD; i++) {
@@ -87,6 +91,7 @@ void ovs_bpf_exit(void)
 		if (prog)
 			bpf_prog_put(prog);
 	}
+	*/
 
 	flex_array_free(bpf_callbacks);
 	bpf_unregister_prog_type(&tl);
