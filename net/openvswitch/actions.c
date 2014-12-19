@@ -753,27 +753,20 @@ static int execute_bpf(struct sk_buff *skb, struct sw_flow_key *key,
 {
 	struct ovs_action_bpf_prog *bpf;
 	struct bpf_prog *prog;
-	unsigned int pkt_len;
 	int err;
 
 	bpf = nla_data(a);
 	prog = ovs_bpf_lookup(ntohl(bpf->prog_id));
-	if (!prog)
-		return -EINVAL;
+	BUG_ON(IS_ERR_OR_NULL(prog));
 
 	/* XXX: What's the BPF function interface meant to be?
 	 * -N: error code N
 	 *  0: drop
 	 * +N: final packet length
 	 */
-	pkt_len = prog->bpf_func(skb, prog->insnsi);
+	err = BPF_PROG_RUN(prog, skb);
 
-	/* XXX: Doesn't handle packet enlargement. */
-	err = pkt_len ? pskb_trim(skb, pkt_len) : -EPERM; /* Drop */
-	if (err)
-		return err;
-
-	return 0; /* Keep */
+	return err < 0 ? err : err;
 }
 
 /* Execute a list of actions against 'skb'. */
