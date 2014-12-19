@@ -30,13 +30,30 @@ struct flex_array *bpf_callbacks;
 /* XXX */
 #define MAX_FD 1024
 
+static u64 ovs_printk(u64 r1, u64 fmt_size, u64 r3, u64 r4, u64 r5)
+{
+	char *fmt = (char *) (long) r1;
+
+	OVS_NLERR(true, "%s", fmt);
+
+	return 0;
+}
+
+const struct bpf_func_proto printk_proto = {
+	.func = ovs_printk,
+	.gpl_only = true,
+	.ret_type = RET_INTEGER,
+	.arg1_type = ARG_PTR_TO_STACK,
+	.arg2_type = ARG_CONST_STACK_SIZE,
+};
+
 static const struct bpf_func_proto *verifier_func(enum bpf_func_id func_id)
 {
 	printk("verifier_func(%d)\n", func_id);
 
 	switch (func_id) {
 	case BPF_FUNC_printk:
-		return tracing_filter_func_proto(func_id);
+		return &printk_proto;
 	default:
 		break;
 	}
