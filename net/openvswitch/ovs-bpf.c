@@ -121,12 +121,16 @@ struct bpf_prog *ovs_bpf_lookup(u32 fd)
 	OVS_NLERR(true, "ovs_bpf_lookup(%d)", fd);
 
 	/* Should resize rather than reject FDs > 1024. */
-	if (fd > MAX_FD)
+	if (fd > MAX_FD) {
+		OVS_NLERR(true, "invalid fd");
 		return NULL;
+	}
 
 	prog = flex_array_get_ptr(bpf_callbacks, fd);
-	if (prog)
+	if (prog) {
+		OVS_NLERR(true, "ovs_bpf_lookup() found cached prog");
 		return prog;
+	}
 
 	prog = bpf_prog_get(fd);
 	if (IS_ERR(prog)) {
@@ -144,6 +148,8 @@ struct bpf_prog *ovs_bpf_lookup(u32 fd)
 	 * and hold on to it until ovs_bpf_exit().
 	 */
 	flex_array_put_ptr(bpf_callbacks, fd, prog, GFP_KERNEL);
+
+	OVS_NLERR(true, "ovs_bpf_lookup() success!");
 
 	return prog;
 }
