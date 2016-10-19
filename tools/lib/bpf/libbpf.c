@@ -31,7 +31,12 @@
 #include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/bpf.h>
+#include <linux/magic.h>
 #include <linux/list.h>
+#include <linux/limits.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
+#include <sys/vfs.h>
 #include <libelf.h>
 #include <gelf.h>
 
@@ -1167,6 +1172,139 @@ int bpf_object__load(struct bpf_object *obj)
 out:
 	bpf_object__unload(obj);
 	pr_warning("failed to load object '%s'\n", obj->path);
+	return err;
+}
+
+#define stringize(x) #x
+
+static int mount_bpf(char *path)
+{
+	const char *mounts_fmt = "%*s %"stringize(PATH_MAX)"s %#"stringize(NAME_MAX)"s %*s\n";
+	struct statfs st_fs;
+	char type[NAME_MAX];
+	int err = 0;
+	FILE *fp;
+
+	/* Populate 'path'. */
+	fp = fopen("/proc/mounts", "r");
+	if (fp) {
+		while (fscanf(fp, mounts_fmt, path, type) == 2) {
+			if (!strcmp(type, "bpf"))
+				break;
+		}
+		if (fclose(fp)) {
+			err = errno;
+			pr_warning("failed to close /proc/mounts: %s\n",
+				strerror(err));
+		}
+		if (strcmp(type, "bpf")) {
+			err = errno;
+			pr_debug("failed to find bpf mount\n");
+		}
+	} else {
+		err = errno;
+		pr_warning("cannot open /proc/mounts: %s\n",
+			strerror(err));
+	}
+	if (err) {
+		pr_debug("using /sys/fs/bpf for BPF filesystem mountpoint\n");
+		strcpy(path, "/sys/fs/bpf");
+	}
+
+	if (!statfs(path, &st_fs) && st_fs.f_type == BPF_FS_MAGIC)
+		return 0;
+
+	if (mount("bpf", path, "bpf", 0, NULL)) {
+		err = errno;
+		pr_warning("failed to mount bpf: %s\n",
+			strerror(err));
+		return err;
+	}
+
+	return 0;
+}
+
+static int make_dirs(const char *path, const char *subdir, char *buf,
+		     size_t len)
+{
+	snprintf(buf, len, "%s/%s/", path, subdir);
+	if (mkdir(buf, 0700) && errno != EEXIST) {
+		pr_warning("failed to mkdir %s: %s\n", subdir, strerror(errno));
+		return errno;
+	}
+
+	snprintf(buf, len, "%s/%s/maps/", path, subdir);
+	if (mkdir(buf, 0700) && errno != EEXIST) {
+		pr_warning("failed to mkdir map: %s\n", strerror(errno));
+		return errno;
+	}
+
+	snprintf(buf, len, "%s/%s/progs/", path, subdir);
+	if (mkdir(buf, 0700) && errno != EEXIST) {
+		pr_warning("failed to mkdir prog: %s\n", strerror(errno));
+		return errno;
+	}
+
+	return 0;
+}
+
+int bpf_object__pin(struct bpf_object *obj, const char *subdir)
+{
+	const size_t len = 255;
+	char path[PATH_MAX];
+	char buf[len];
+	size_t i, j;
+	int err = 0;
+
+	if (!obj)
+		return -ENOENT;
+
+	if (!obj->loaded) {
+		pr_warning("object not yet loaded; load it first\n");
+		return -ENOENT;
+	}
+
+	err = mount_bpf(path);
+	if (err)
+		return err;
+
+	err = make_dirs(path, subdir, buf, len);
+	if (err)
+		return err;
+
+	for (i = 0; i < obj->nr_maps; i++) {
+		struct bpf_map *map = &obj->maps[i];
+
+		snprintf(buf, len, "%s/%s/maps/%s", path, subdir,
+			 bpf_map__name(map));
+		err = bpf_obj_pin(map->fd, buf);
+		if (err) {
+			pr_warning("failed to pin map: %s\n", strerror(errno));
+			goto out;
+		}
+		pr_debug("Loaded map '%s' at '%s'\n", bpf_map__name(map), buf);
+	}
+
+	if (obj->programs && obj->nr_programs) {
+		for (i = 0; i < obj->nr_programs; i++) {
+			struct bpf_program *prog = &obj->programs[i];
+
+			for (j = 0; j < prog->instances.nr; j++) {
+				snprintf(buf, len, "%s/%s/progs/%s_%zu", path,
+					 subdir, prog->section_name, j);
+				err = bpf_obj_pin(prog->instances.fds[j], buf);
+				if (err) {
+					pr_warning("failed to pin prog: %s\n",
+						   strerror(errno));
+					goto out;
+				}
+				pr_debug("Loaded prog '%s' at '%s'\n",
+					 prog->section_name, buf);
+			}
+		}
+	}
+
+out:
 	return err;
 }
 
