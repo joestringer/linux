@@ -22,8 +22,8 @@
 #define __BPF_LIBBPF_H
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdbool.h>
-#include <linux/err.h>
 
 enum libbpf_errno {
 	__LIBBPF_ERRNO__START = 4000,
@@ -220,5 +220,7 @@ typedef void (*bpf_map_clear_priv_t)(struct bpf_map *, void *);
 int bpf_map__set_priv(struct bpf_map *map, void *priv,
 		      bpf_map_clear_priv_t clear_priv);
 void *bpf_map__priv(struct bpf_map *map);
+
+long libbpf_get_error(const void *ptr);
 
 #endif
