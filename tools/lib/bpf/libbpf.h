@@ -57,6 +57,22 @@ void libbpf_set_print(libbpf_print_fn_t warn,
 		      libbpf_print_fn_t info,
 		      libbpf_print_fn_t debug);
 
+/*
+ * By default, libbpf will parse the 'maps' section of an ELF by using
+ * 'struct bpf_map_def' as the structure that defines the attributes of
+ * the map. However, if you wish to write ELFs that contain additional
+ * parameters and to store these in the bpf_object, then you can set the
+ * parser using the below definitions.
+ *
+ * 'src' is 'map_def_size' long, which is the length of one map definition
+ * within an ELF. The parser should use this to populate the libbpf map
+ * definition structure. Additional parameters can be attached to the map
+ * using bpf_map__set_priv().
+ */
+struct bpf_map_def;
+typedef void (*libbpf_map_parse_fn_t)(const void *src, struct bpf_map_def *dst);
+void libbpf_set_map_parse(libbpf_map_parse_fn_t parser, size_t map_def_size);
+
 /* Hide internal to user */
 struct bpf_object;
 

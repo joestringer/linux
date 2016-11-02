@@ -103,6 +103,20 @@ static const char *libbpf_strerror_table[NR_ERRNO] = {
 	[ERRCODE_OFFSET(PROGTYPE)]	= "Kernel doesn't support this program type",
 };
 
+static void libbpf_parse_map_def(const void *src, struct bpf_map_def *dst)
+{
+	*dst = *(struct bpf_map_def *)src;
+}
+
+static libbpf_map_parse_fn_t __parse_map = libbpf_parse_map_def;
+static size_t __map_def_size = sizeof(struct bpf_map_def);
+
+void libbpf_set_map_parse(libbpf_map_parse_fn_t parser, size_t map_def_size)
+{
+	__parse_map = parser;
+	__map_def_size = map_def_size;
+}
+
 int libbpf_strerror(int err, char *buf, size_t size)
 {
 	if (!buf || !size)
@@ -525,7 +539,7 @@ bpf_object__init_maps(struct bpf_object *obj, void *data,
 	size_t nr_maps;
 	int i;
 
-	nr_maps = size / sizeof(struct bpf_map_def);
+	nr_maps = size / __map_def_size;
 	if (!data || !nr_maps) {
 		pr_debug("%s doesn't need map definition\n",
 			 obj->path);
@@ -543,6 +557,7 @@ bpf_object__init_maps(struct bpf_object *obj, void *data,
 
 	for (i = 0; i < nr_maps; i++) {
 		struct bpf_map_def *def = &obj->maps[i].def;
+		int ofs = i * __map_def_size;
 
 		/*
 		 * fill all fd with -1 so won't close incorrect
@@ -552,7 +567,7 @@ bpf_object__init_maps(struct bpf_object *obj, void *data,
 		obj->maps[i].fd = -1;
 
 		/* Save map definition into obj->maps */
-		*def = ((struct bpf_map_def *)data)[i];
+		__parse_map(data + ofs, def);
 	}
 	return 0;
 }
@@ -579,7 +594,7 @@ bpf_object__init_maps_name(struct bpf_object *obj)
 		map_name = elf_strptr(obj->efile.elf,
 				      obj->efile.strtabidx,
 				      sym.st_name);
-		map_idx = sym.st_value / sizeof(struct bpf_map_def);
+		map_idx = sym.st_value / __map_def_size;
 		if (map_idx >= obj->nr_maps) {
 			pr_warning("index of map \"%s\" is buggy: %zu > %zu\n",
 				   map_name, map_idx, obj->nr_maps);
@@ -777,7 +792,7 @@ bpf_program__collect_reloc(struct bpf_program *prog,
 			return -LIBBPF_ERRNO__RELOC;
 		}
 
-		map_idx = sym.st_value / sizeof(struct bpf_map_def);
+		map_idx = sym.st_value / __map_def_size;
 		if (map_idx >= nr_maps) {
 			pr_warning("bpf relocation: map_idx %d large than %d\n",
 				   (int)map_idx, (int)nr_maps - 1);
