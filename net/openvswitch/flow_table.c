@@ -195,7 +195,6 @@ static struct table_instance *table_instance_alloc(int new_size)
 	}
 	ti->n_buckets = new_size;
 	ti->node_ver = 0;
-	ti->keep_flows = false;
 	get_random_bytes(&ti->hash_seed, sizeof(u32));
 
 	return ti;
@@ -234,9 +233,9 @@ static void flow_tbl_destroy_rcu_cb(struct rcu_head *rcu)
 	__table_instance_destroy(ti);
 }
 
-static void table_instance_destroy(struct table_instance *ti,
-				   struct table_instance *ufid_ti,
-				   bool deferred)
+static void table_instance_destroy_and_free(struct table_instance *ti,
+					    struct table_instance *ufid_ti,
+					    bool deferred)
 {
 	int i;
 
@@ -244,8 +243,6 @@ static void table_instance_destroy(struct table_instance *ti,
 		return;
 
 	BUG_ON(!ufid_ti);
-	if (ti->keep_flows)
-		goto skip_flows;
 
 	for (i = 0; i < ti->n_buckets; i++) {
 		struct sw_flow *flow;
@@ -262,7 +259,6 @@ static void table_instance_destroy(struct table_instance *ti,
 		}
 	}
 
-skip_flows:
 	if (deferred) {
 		call_rcu(&ti->rcu, flow_tbl_destroy_rcu_cb);
 		call_rcu(&ufid_ti->rcu, flow_tbl_destroy_rcu_cb);
@@ -280,7 +276,8 @@ void ovs_flow_tbl_destroy(struct flow_table *table)
 	struct table_instance *ti = rcu_dereference_raw(table->ti);
 	struct table_instance *ufid_ti = rcu_dereference_raw(table->ufid_ti);
 
-	table_instance_destroy(ti, ufid_ti, false);
+	if (ti)
+		table_instance_destroy_and_free(ti, ufid_ti, false);
 }
 
 struct sw_flow *ovs_flow_tbl_dump_next(struct table_instance *ti,
@@ -360,8 +357,6 @@ static void flow_table_copy_flows(struct table_instance *old,
 					     flow_table.node[old_ver])
 				table_instance_insert(new, flow);
 	}
-
-	old->keep_flows = true;
 }
 
 static struct table_instance *table_instance_rehash(struct table_instance *ti,
@@ -399,7 +394,8 @@ int ovs_flow_tbl_flush(struct flow_table *flow_table)
 	flow_table->count = 0;
 	flow_table->ufid_count = 0;
 
-	table_instance_destroy(old_ti, old_ufid_ti, true);
+	if (old_ti)
+		table_instance_destroy_and_free(old_ti, old_ufid_ti, true);
 	return 0;
 
 err_free_ti:
