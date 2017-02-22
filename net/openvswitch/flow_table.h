@@ -50,6 +50,7 @@ struct flow_table {
 	struct list_head mask_list;
 	unsigned long last_rehash;
 	unsigned int count;
+	uint8_t *masked_key;			/* (n_cpus * key_len) */
 	unsigned int ufid_count;
 };
 
