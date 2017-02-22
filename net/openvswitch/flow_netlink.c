@@ -69,7 +69,7 @@ static void update_range(struct sw_flow_match *match,
 	if (!is_mask)
 		range = &match->range;
 	else
-		range = &match->mask->range;
+		range = &match->mask->head.range;
 
 	if (range->start == range->end) {
 		range->start = start;
@@ -1862,8 +1862,11 @@ int ovs_nla_put_masked_key(const struct sw_flow *flow, struct sk_buff *skb)
 /* Called with ovs_mutex or RCU read lock. */
 int ovs_nla_put_mask(const struct sw_flow *flow, struct sk_buff *skb)
 {
-	return ovs_nla_put_key(&flow->key, &flow->mask->key,
-				OVS_FLOW_ATTR_MASK, true, skb);
+	struct sw_flow_key *output;
+
+	output = (struct sw_flow_key *)&flow->head.mask->key;
+	return ovs_nla_put_key(&flow->key, output, OVS_FLOW_ATTR_MASK, true,
+			       skb);
 }
 
 #define MAX_ACTIONS_BUFSIZE	(32 * 1024)
@@ -2089,7 +2092,8 @@ void ovs_match_init(struct sw_flow_match *match,
 
 	if (mask) {
 		memset(&mask->key, 0, sizeof(mask->key));
-		mask->range.start = mask->range.end = 0;
+		mask->head.key_len = sizeof(mask->key);
+		mask->head.range.start = mask->head.range.end = 0;
 	}
 }
 

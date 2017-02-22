@@ -37,20 +37,35 @@
 #include "flow.h"
 
 struct table_instance {
+	struct rcu_head rcu;
 	struct flex_array *buckets;
 	unsigned int n_buckets;
-	struct rcu_head rcu;
 	int node_ver;
 	u32 hash_seed;
 };
 
-struct flow_table {
+/**
+ * struct ts_table - Tuple-space table handle
+ *
+ * @ti: Current table instance
+ * @mask_list: List of masks used for lookup
+ * @last_rehash: Jiffies at time of most recent rehash
+ * @count: Number of elements residing within 'ti'
+ * @key_len: Length of key used for hash, comparison and masked_key storage
+ * @masked_key: Buffer to hold masked version of key during lookup
+ */
+struct ts_table {
 	struct table_instance __rcu *ti;
-	struct table_instance __rcu *ufid_ti;
 	struct list_head mask_list;
 	unsigned long last_rehash;
 	unsigned int count;
+	size_t key_len;
 	uint8_t *masked_key;			/* (n_cpus * key_len) */
+};
+
+struct flow_table {
+	struct ts_table tt;
+	struct table_instance __rcu *ufid_ti;
 	unsigned int ufid_count;
 	unsigned long ufid_last_rehash;
 };

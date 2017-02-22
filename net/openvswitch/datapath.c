@@ -1365,7 +1365,7 @@ static int ovs_flow_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		return -ENODEV;
 	}
 
-	ti = rcu_dereference(dp->table.ti);
+	ti = rcu_dereference(dp->table.tt.ti);
 	for (;;) {
 		struct sw_flow *flow;
 		u32 bucket, obj;

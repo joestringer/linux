@@ -164,22 +164,29 @@ static inline bool sw_flow_key_is_nd(const struct sw_flow_key *key)
 		 key->tp.src == htons(NDISC_NEIGHBOUR_ADVERTISEMENT));
 }
 
-struct sw_flow_key_range {
+struct ts_range {
 	unsigned short int start;
 	unsigned short int end;
 };
+#define sw_flow_key_range ts_range
+
+struct ts_mask {
+	struct rcu_head rcu;
+	int ref_count;
+	struct list_head list;
+	struct ts_range range;
+	size_t key_len;
+	u8 key[];
+};
 
 struct sw_flow_mask {
-	int ref_count;
-	struct rcu_head rcu;
-	struct list_head list;
-	struct sw_flow_key_range range;
+	struct ts_mask head;
 	struct sw_flow_key key;
 };
 
 struct sw_flow_match {
 	struct sw_flow_key *key;
-	struct sw_flow_key_range range;
+	struct ts_range range;
 	struct sw_flow_mask *mask;
 };
 
@@ -208,18 +215,25 @@ struct flow_stats {
 	__be16 tcp_flags;		/* Union of seen TCP flags. */
 };
 
-struct sw_flow {
+struct ts_element {
 	struct rcu_head rcu;
+	struct hlist_node node[2];
+	u32 hash;
+	void *key;
+	struct ts_mask *mask;
+};
+
+struct sw_flow {
+	struct ts_element head;
 	struct {
 		struct hlist_node node[2];
 		u32 hash;
-	} flow_table, ufid_table;
+	} ufid_table;
 	int stats_last_writer;		/* CPU id of the last writer on
 					 * 'stats[0]'.
 					 */
 	struct sw_flow_key key;
 	struct sw_flow_id id;
-	struct sw_flow_mask *mask;
 	struct sw_flow_actions __rcu *sf_acts;
 	struct flow_stats __rcu *stats[]; /* One for each CPU.  First one
 					   * is allocated at flow creation time,
