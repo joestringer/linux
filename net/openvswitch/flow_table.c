@@ -203,6 +203,7 @@ static struct table_instance *table_instance_alloc(int new_size)
 int ovs_flow_tbl_init(struct flow_table *table)
 {
 	struct table_instance *ti, *ufid_ti;
+	struct sw_flow_key __percpu *masked_key;
 
 	ti = table_instance_alloc(TBL_MIN_BUCKETS);
 
@@ -213,14 +214,21 @@ int ovs_flow_tbl_init(struct flow_table *table)
 	if (!ufid_ti)
 		goto free_ti;
 
+	masked_key = alloc_percpu(struct sw_flow_key);
+	if (!masked_key)
+		goto free_ufid_ti;
+
 	rcu_assign_pointer(table->ti, ti);
 	rcu_assign_pointer(table->ufid_ti, ufid_ti);
 	INIT_LIST_HEAD(&table->mask_list);
+	table->masked_key = masked_key;
 	table->last_rehash = jiffies;
 	table->count = 0;
 	table->ufid_count = 0;
 	return 0;
 
+free_ufid_ti:
+	__table_instance_destroy(ufid_ti);
 free_ti:
 	__table_instance_destroy(ti);
 	return -ENOMEM;
@@ -276,6 +284,7 @@ void ovs_flow_tbl_destroy(struct flow_table *table)
 	struct table_instance *ti = rcu_dereference_raw(table->ti);
 	struct table_instance *ufid_ti = rcu_dereference_raw(table->ufid_ti);
 
+	free_percpu(table->masked_key);
 	if (ti)
 		table_instance_destroy_and_free(ti, ufid_ti, false);
 }
@@ -459,21 +468,23 @@ static bool ovs_flow_cmp_unmasked_key(const struct sw_flow *flow,
 	return cmp_key(flow->id.unmasked_key, key, key_start, key_end);
 }
 
-static struct sw_flow *masked_flow_lookup(struct table_instance *ti,
+static struct sw_flow *masked_flow_lookup(struct flow_table *table,
 					  const struct sw_flow_key *unmasked,
 					  const struct sw_flow_mask *mask)
 {
+	struct table_instance *ti = rcu_dereference_ovsl(table->ti);
+	struct sw_flow_key *masked_key;
 	struct sw_flow *flow;
 	struct hlist_head *head;
 	u32 hash;
-	struct sw_flow_key masked_key;
 
-	ovs_flow_mask_key(&masked_key, unmasked, false, mask);
-	hash = flow_hash(&masked_key, &mask->range);
+	masked_key = this_cpu_ptr(table->masked_key);
+	ovs_flow_mask_key(masked_key, unmasked, false, mask);
+	hash = flow_hash(masked_key, &mask->range);
 	head = find_bucket(ti, hash);
 	hlist_for_each_entry_rcu(flow, head, flow_table.node[ti->node_ver]) {
 		if (flow->mask == mask && flow->flow_table.hash == hash &&
-		    flow_cmp_masked_key(flow, &masked_key, &mask->range))
+		    flow_cmp_masked_key(flow, masked_key, &mask->range))
 			return flow;
 	}
 	return NULL;
@@ -483,14 +494,13 @@ struct sw_flow *ovs_flow_tbl_lookup_stats(struct flow_table *tbl,
 				    const struct sw_flow_key *key,
 				    u32 *n_mask_hit)
 {
-	struct table_instance *ti = rcu_dereference_ovsl(tbl->ti);
 	struct sw_flow_mask *mask;
 	struct sw_flow *flow;
 
 	*n_mask_hit = 0;
 	list_for_each_entry_rcu(mask, &tbl->mask_list, list) {
 		(*n_mask_hit)++;
-		flow = masked_flow_lookup(ti, key, mask);
+		flow = masked_flow_lookup(tbl, key, mask);
 		if (flow)  /* Found */
 			return flow;
 	}
@@ -508,13 +518,12 @@ struct sw_flow *ovs_flow_tbl_lookup(struct flow_table *tbl,
 struct sw_flow *ovs_flow_tbl_lookup_exact(struct flow_table *tbl,
 					  const struct sw_flow_match *match)
 {
-	struct table_instance *ti = rcu_dereference_ovsl(tbl->ti);
 	struct sw_flow_mask *mask;
 	struct sw_flow *flow;
 
 	/* Always called under ovs-mutex. */
 	list_for_each_entry(mask, &tbl->mask_list, list) {
-		flow = masked_flow_lookup(ti, match->key, mask);
+		flow = masked_flow_lookup(tbl, match->key, mask);
 		if (flow && ovs_identifier_is_key(&flow->id) &&
 		    ovs_flow_cmp_unmasked_key(flow, match))
 			return flow;

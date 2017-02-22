@@ -51,6 +51,7 @@ struct flow_table {
 	unsigned long last_rehash;
 	unsigned int count;
 	unsigned int ufid_count;
+	struct sw_flow_key __percpu *masked_key;
 };
 
 extern struct kmem_cache *flow_stats_cache;
