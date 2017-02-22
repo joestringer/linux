@@ -52,6 +52,7 @@ struct flow_table {
 	unsigned int count;
 	uint8_t *masked_key;			/* (n_cpus * key_len) */
 	unsigned int ufid_count;
+	unsigned long ufid_last_rehash;
 };
 
 extern struct kmem_cache *flow_stats_cache;
