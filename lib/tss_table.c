@@ -24,7 +24,7 @@
 #include <linux/rcupdate.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
-#include <linux/ts_table.h>
+#include <linux/tss_table.h>
 #include <linux/types.h>
 
 #define REHASH_INTERVAL		(10 * 60 * HZ)

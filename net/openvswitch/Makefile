@@ -11,7 +11,6 @@ openvswitch-y := \
 	flow.o \
 	flow_netlink.o \
 	flow_table.o \
-	tss_table.o \
 	vport.o \
 	vport-internal_dev.o \
 	vport-netdev.o

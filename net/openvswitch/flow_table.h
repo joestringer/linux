@@ -29,7 +29,7 @@
 #include <linux/in6.h>
 #include <linux/jiffies.h>
 #include <linux/time.h>
-#include <linux/ts_table.h>
+#include <linux/tss_table.h>
 #include <linux/flex_array.h>
 
 #include <net/inet_ecn.h>

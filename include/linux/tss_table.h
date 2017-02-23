@@ -32,6 +32,14 @@ struct table_instance {
 	u32 hash_seed;
 };
 
+typedef void (*tst_freefn_t)(struct ts_element *elem, bool deferred);
+struct table_instance *table_instance_alloc(int n_elements);
+void __table_instance_destroy(struct table_instance *ti);
+void table_instance_destroy(struct table_instance *ti, bool deferred);
+void table_instance_destroy_rcu_cb(struct rcu_head *rcu);
+void table_instance_destroy_and_free(struct table_instance *ti, bool deferred,
+				     tst_freefn_t freefn);
+
 /**
  * XXX
  */
@@ -76,7 +84,6 @@ struct ts_mask {
 /* Returns true if 'key1' and 'key2' are the same within 'range'. */
 typedef bool (*tst_cmpfn_t)(const void *key1, const void *key2,
 			    const struct ts_range *range);
-typedef void (*tst_freefn_t)(struct ts_element *elem, bool deferred);
 
 /**
  * struct ts_table - Tuple-space table handle
@@ -104,13 +111,6 @@ struct tst_dump_ctx {
 	u32 last;
 	struct table_instance *ti;
 };
-
-struct table_instance *table_instance_alloc(int n_elements);
-void __table_instance_destroy(struct table_instance *ti);
-void table_instance_destroy(struct table_instance *ti, bool deferred);
-void table_instance_destroy_rcu_cb(struct rcu_head *rcu);
-void table_instance_destroy_and_free(struct table_instance *ti, bool deferred,
-				     tst_freefn_t freefn);
 
 void tst_mask_key(void *dst, const void *src, const void *mask,
 		  const struct ts_range *range);
