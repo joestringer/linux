@@ -29,39 +29,13 @@
 #include <linux/in6.h>
 #include <linux/jiffies.h>
 #include <linux/time.h>
+#include <linux/ts_table.h>
 #include <linux/flex_array.h>
 
 #include <net/inet_ecn.h>
 #include <net/ip_tunnels.h>
 
 #include "flow.h"
-
-struct table_instance {
-	struct rcu_head rcu;
-	struct flex_array *buckets;
-	unsigned int n_buckets;
-	int node_ver;
-	u32 hash_seed;
-};
-
-/**
- * struct ts_table - Tuple-space table handle
- *
- * @ti: Current table instance
- * @mask_list: List of masks used for lookup
- * @last_rehash: Jiffies at time of most recent rehash
- * @count: Number of elements residing within 'ti'
- * @key_len: Length of key used for hash, comparison and masked_key storage
- * @masked_key: Buffer to hold masked version of key during lookup
- */
-struct ts_table {
-	struct table_instance __rcu *ti;
-	struct list_head mask_list;
-	unsigned long last_rehash;
-	unsigned int count;
-	size_t key_len;
-	uint8_t *masked_key;			/* (n_cpus * key_len) */
-};
 
 struct flow_table {
 	struct ts_table tt;
@@ -87,8 +61,8 @@ int ovs_flow_tbl_insert(struct flow_table *table, struct sw_flow *flow,
 			const struct sw_flow_mask *mask);
 void ovs_flow_tbl_remove(struct flow_table *table, struct sw_flow *flow);
 int  ovs_flow_tbl_num_masks(const struct flow_table *table);
-struct sw_flow *ovs_flow_tbl_dump_next(struct table_instance *table,
-				       u32 *bucket, u32 *idx);
+struct sw_flow *ovs_flow_tbl_dump_next(struct flow_table *table,
+				       struct tst_dump_ctx *ctx);
 struct sw_flow *ovs_flow_tbl_lookup_stats(struct flow_table *,
 				    const struct sw_flow_key *,
 				    u32 *n_mask_hit);

@@ -1347,7 +1347,7 @@ static int ovs_flow_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *a[__OVS_FLOW_ATTR_MAX];
 	struct ovs_header *ovs_header = genlmsg_data(nlmsg_data(cb->nlh));
-	struct table_instance *ti;
+	struct tst_dump_ctx dump;
 	struct datapath *dp;
 	u32 ufid_flags;
 	int err;
@@ -1365,14 +1365,13 @@ static int ovs_flow_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		return -ENODEV;
 	}
 
-	ti = rcu_dereference(dp->table.tt.ti);
+	dump.bucket = cb->args[0];
+	dump.last = cb->args[1];
+	dump.ti = NULL;
 	for (;;) {
 		struct sw_flow *flow;
-		u32 bucket, obj;
 
-		bucket = cb->args[0];
-		obj = cb->args[1];
-		flow = ovs_flow_tbl_dump_next(ti, &bucket, &obj);
+		flow = ovs_flow_tbl_dump_next(&dp->table, &dump);
 		if (!flow)
 			break;
 
@@ -1382,9 +1381,10 @@ static int ovs_flow_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 					   OVS_FLOW_CMD_NEW, ufid_flags) < 0)
 			break;
 
-		cb->args[0] = bucket;
-		cb->args[1] = obj;
+		cb->args[0] = dump.bucket;
+		cb->args[1] = dump.last;
 	}
+
 	rcu_read_unlock();
 	return skb->len;
 }
