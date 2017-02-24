@@ -31,7 +31,5 @@ ip link add name $IFC type veth peer name pair_$IFC
 ip link set $IFC up
 ip link set pair_$IFC up
 
-test ./parse_simple.o simple
-test ./parse_varlen.o varlen
-test ./parse_ldabs.o ldabs
+test ./parse_tuple.o tuple
 ip link del dev $IFC
