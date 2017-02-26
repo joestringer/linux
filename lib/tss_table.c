@@ -310,9 +310,9 @@ static uint8_t *get_pcpu_key(struct ts_table *table)
 }
 
 /* Caller must acquire RCU read lock or mutex write lock. */
-struct ts_element *tst_masked_lookup(struct ts_table *table,
-				     const void *unmasked, const void *mask,
-				     const struct ts_range *range)
+struct ts_element *__tst_masked_lookup(struct ts_table *table,
+				       const void *unmasked, const void *mask,
+				       const struct ts_range *range)
 {
 	struct table_instance *ti = rcu_dereference_ovsl(table->ti);
 	uint8_t *masked_key;
@@ -331,6 +331,26 @@ struct ts_element *tst_masked_lookup(struct ts_table *table,
 	}
 	return NULL;
 }
+
+/* Must be called with RCU read lock or mutex */
+struct ts_element *tst_masked_lookup(struct ts_table *table,
+				     const void *unmasked, const void *mask,
+				     const struct ts_range *range)
+{
+	const struct ts_mask *tmask;
+	struct ts_element *e;
+
+	list_for_each_entry_rcu(tmask, &table->mask_list, list) {
+		if (!memcmp(range, &tmask->range, sizeof(*range)) &&
+		    table->compare(mask, &tmask->key, range)) {
+			e = __tst_masked_lookup(table, unmasked, &tmask->key,
+						&tmask->range);
+			if (e)
+				return e;
+		}
+	}
+	return NULL;
+}
 EXPORT_SYMBOL(tst_masked_lookup);
 
 /* Must be called with RCU read lock or mutex */
@@ -343,7 +363,7 @@ struct ts_element *tst_lookup_stats(struct ts_table *table,
 	*n_mask_hit = 0;
 	list_for_each_entry_rcu(mask, &table->mask_list, list) {
 		(*n_mask_hit)++;
-		e = tst_masked_lookup(table, key, &mask->key, &mask->range);
+		e = __tst_masked_lookup(table, key, &mask->key, &mask->range);
 		if (e)  /* Found */
 			return e;
 	}
