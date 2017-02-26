@@ -6,3 +6,4 @@ ifeq ($(CONFIG_PERF_EVENTS),y)
 obj-$(CONFIG_BPF_SYSCALL) += stackmap.o
 endif
 obj-$(CONFIG_CGROUP_BPF) += cgroup.o
+CFLAGS_tsstab.o += -O0
