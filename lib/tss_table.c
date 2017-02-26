@@ -71,11 +71,11 @@ static struct flex_array *alloc_buckets(unsigned int n_buckets)
 	int i, err;
 
 	buckets = flex_array_alloc(sizeof(struct hlist_head),
-				   n_buckets, GFP_KERNEL);
+				   n_buckets, GFP_ATOMIC);
 	if (!buckets)
 		return NULL;
 
-	err = flex_array_prealloc(buckets, 0, n_buckets, GFP_KERNEL);
+	err = flex_array_prealloc(buckets, 0, n_buckets, GFP_ATOMIC);
 	if (err) {
 		flex_array_free(buckets);
 		return NULL;
@@ -90,7 +90,7 @@ static struct flex_array *alloc_buckets(unsigned int n_buckets)
 
 struct table_instance *table_instance_alloc(int n_elements)
 {
-	struct table_instance *ti = kmalloc(sizeof(*ti), GFP_KERNEL);
+	struct table_instance *ti = kmalloc(sizeof(*ti), GFP_ATOMIC);
 
 	if (!ti)
 		return NULL;
@@ -409,7 +409,7 @@ static struct ts_mask *mask_alloc(size_t key_len)
 	size_t mask_size = sizeof(struct ts_mask) + key_len;
 	struct ts_mask *mask;
 
-	mask = kmalloc(mask_size, GFP_KERNEL);
+	mask = kmalloc(mask_size, GFP_ATOMIC);
 	if (mask) {
 		mask->ref_count = 1;
 		mask->key_len = key_len;
