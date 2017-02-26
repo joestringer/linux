@@ -486,11 +486,15 @@ static void table_insert(struct ts_table *table, struct ts_element *e,
 		new_ti = table_instance_expand(ti);
 	else if (time_after(jiffies, table->last_rehash + REHASH_INTERVAL))
 		new_ti = table_instance_rehash(ti, ti->n_buckets);
+	else
+		return;
 
 	if (new_ti) {
 		rcu_assign_pointer(table->ti, new_ti);
 		call_rcu(&ti->rcu, table_instance_destroy_rcu_cb);
 		table->last_rehash = jiffies;
+	} else {
+		WARN_ONCE(1, "tss rehash/expand failed\n");
 	}
 }
 

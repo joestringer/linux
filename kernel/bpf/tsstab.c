@@ -236,6 +236,11 @@ static int btt_update(struct bpf_map *map, void *key, void *value, u64 flags)
 	struct ts_element *e;
 	int err = 0;
 
+	/* XXX: If we're really getting nowhere, try return immediately. */
+	/* XXX: Then try bte_alloc() / bte_free(). Slowly expand until
+	 *	it's obvious why there is small memory leak in BPF_EXIST and
+	 *	large memory leak in BPF_NOEXIST. */
+
 	if (unlikely(flags & ~(BPF_NOEXIST | BPF_EXIST)))
 		return -EINVAL;
 
