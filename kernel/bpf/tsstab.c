@@ -278,6 +278,12 @@ static int btt_update(struct bpf_map *map, void *key, void *value, u64 flags)
 		goto unlock;
 	}
 
+	if (btt->table.count > btt->map.max_entries) {
+		/* XXX: Replace */
+		err = -E2BIG;
+		goto unlock;
+	}
+
 	/* XXX: Prevent expansion beyond max_size (due to mask insert) */
 	err = tst_insert(&btt->table, &bte->elem, tmask);
 	if (err)
