@@ -29,6 +29,7 @@
 #include <linux/in6.h>
 #include <linux/jiffies.h>
 #include <linux/time.h>
+#include <linux/tuple_table.h>
 #include <linux/flex_array.h>
 
 #include <net/inet_ecn.h>
@@ -36,22 +37,10 @@
 
 #include "flow.h"
 
-struct table_instance {
-	struct flex_array *buckets;
-	unsigned int n_buckets;
-	struct rcu_head rcu;
-	int node_ver;
-	u32 hash_seed;
-};
-
 struct flow_table {
-	struct table_instance __rcu *ti;
+	struct ts_table tt;
 	struct table_instance __rcu *ufid_ti;
-	struct list_head mask_list;
-	unsigned long last_rehash;
-	unsigned int count;
 	unsigned int ufid_count;
-	struct sw_flow_key __percpu *masked_key;
 };
 
 extern struct kmem_cache *flow_stats_cache;
@@ -71,8 +60,8 @@ int ovs_flow_tbl_insert(struct flow_table *table, struct sw_flow *flow,
 			const struct sw_flow_mask *mask);
 void ovs_flow_tbl_remove(struct flow_table *table, struct sw_flow *flow);
 int  ovs_flow_tbl_num_masks(const struct flow_table *table);
-struct sw_flow *ovs_flow_tbl_dump_next(struct table_instance *table,
-				       u32 *bucket, u32 *idx);
+struct sw_flow *ovs_flow_tbl_dump_next(struct flow_table *table,
+				       struct tst_dump_ctx *ctx);
 struct sw_flow *ovs_flow_tbl_lookup_stats(struct flow_table *,
 				    const struct sw_flow_key *,
 				    u32 *n_mask_hit);
