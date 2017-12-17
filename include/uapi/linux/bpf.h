@@ -687,6 +687,13 @@ union bpf_attr {
  * int bpf_override_return(pt_regs, rc)
  *	@pt_regs: pointer to struct pt_regs
  *	@rc: the return value to set
+ *
+ * int bpf_sk_lookup(tuple, sockinfo, flags)
+ *     Look for socket matching 'tuple'
+ *     @tuple: pointer to struct sk_lookup_tuple
+ *     @sockinfo: pointer to struct sk_lookup_skinfo
+ *     @flags: reserved for future use
+ *     Return: 0 on success or negative error code
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -747,7 +754,8 @@ union bpf_attr {
 	FN(perf_event_read_value),	\
 	FN(perf_prog_read_value),	\
 	FN(getsockopt),			\
-	FN(override_return),
+	FN(override_return),		\
+	FN(sk_lookup),
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
  * function eBPF program intends to call
@@ -798,6 +806,9 @@ enum bpf_func_id {
 #define BPF_F_CURRENT_CPU		BPF_F_INDEX_MASK
 /* BPF_FUNC_perf_event_output for sk_buff input context. */
 #define BPF_F_CTXLEN_MASK		(0xfffffULL << 32)
+
+/* BPF_FUNC_sk_lookup flags. */
+#define BPF_F_SEARCH_ALL_NS		(1ULL << 0)
 
 /* Mode for BPF_FUNC_skb_adjust_room helper. */
 enum bpf_adj_room_mode {
@@ -876,6 +887,39 @@ struct bpf_sock {
 	__u32 mark;
 	__u32 priority;
 };
+
+struct bpf_sock_tuple {
+	__u32 netns_id;
+	union {
+		__be32 ipv6[4];
+		__be32 ipv4;
+	} saddr;
+	union {
+		__be32 ipv6[4];
+		__be32 ipv4;
+	} daddr;
+	__be16 sport;
+	__be16 dport;
+	__u32 dst_if;
+	__u8 family;
+	__u8 proto;
+};
+
+// TODO: Consider merging with 'bpf_sock'
+struct bpf_sock_info {
+	__u32 mark;
+	__u16 state;
+};
+
+enum {
+	SK_STATE_LISTEN,	// Socket is listening for conns
+	SK_STATE_OPENING,	// Connection is establishing
+	SK_STATE_ESTABLISHED,	// Connection is open
+	SK_STATE_CLOSE,		// Connection is closing/closed
+	// TODO: Directionality?
+	__SK_STATE_MAX
+};
+#define SK_STATE_MAX (__SK_STATE_MAX - 1)
 
 #define XDP_PACKET_HEADROOM 256
 

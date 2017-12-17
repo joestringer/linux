@@ -56,7 +56,11 @@
 #include <net/sock_reuseport.h>
 #include <net/busy_poll.h>
 #include <net/tcp.h>
+#include <net/udp.h>
 #include <linux/bpf_trace.h>
+#include <net/inet_hashtables.h>
+#include <net/inet6_hashtables.h>
+#include <net/net_namespace.h>
 
 /**
  *	sk_filter_trim_cap - run a packet through a socket filter
@@ -3326,6 +3330,138 @@ static const struct bpf_func_proto bpf_getsockopt_proto = {
 	.arg5_type	= ARG_CONST_SIZE,
 };
 
+static void fill_bpf_sock_info(struct sock *sk, struct bpf_sock_info *dst)
+{
+	dst->mark = sk->sk_mark;
+
+	// Even UDP uses the TCP state enums.
+	switch (sk->sk_state) {
+	case TCP_LISTEN:
+		dst->state = SK_STATE_LISTEN;
+		break;
+	case TCP_SYN_RECV:
+	case TCP_NEW_SYN_RECV:
+	case TCP_SYN_SENT:
+		dst->state = SK_STATE_OPENING;
+		break;
+	case TCP_ESTABLISHED:
+		dst->state = SK_STATE_ESTABLISHED;
+		break;
+	case TCP_FIN_WAIT1:
+	case TCP_FIN_WAIT2:
+	case TCP_TIME_WAIT:
+	case TCP_CLOSE:
+	case TCP_CLOSE_WAIT:
+	case TCP_LAST_ACK:
+	case TCP_CLOSING:
+		dst->state = SK_STATE_CLOSE;
+		break;
+	default:
+		break;
+	}
+}
+
+struct sock *
+sk_lookup(struct net *net, struct bpf_sock_tuple *tuple) {
+	int dst_if = (int)tuple->dst_if;
+	struct in6_addr *src6;
+	struct in6_addr *dst6;
+
+	if (tuple->family == AF_INET6) {
+		src6 = (struct in6_addr *)&tuple->saddr.ipv6;
+		dst6 = (struct in6_addr *)&tuple->daddr.ipv6;
+	} else if (tuple->family != AF_INET) {
+		return ERR_PTR(-EOPNOTSUPP);
+	}
+
+	if (tuple->proto == IPPROTO_TCP) {
+		if (tuple->family == AF_INET)
+			return inet_lookup(net, &tcp_hashinfo, NULL, 0,
+					   tuple->saddr.ipv4, tuple->sport,
+					   tuple->daddr.ipv4, tuple->dport,
+					   dst_if);
+		else
+			return inet6_lookup(net, &tcp_hashinfo, NULL, 0,
+					    src6, tuple->sport,
+					    dst6, tuple->dport, dst_if);
+	} else if (tuple->proto == IPPROTO_UDP) {
+		if (tuple->family == AF_INET)
+			return udp4_lib_lookup(net, tuple->saddr.ipv4,
+					       tuple->sport, tuple->daddr.ipv4,
+					       tuple->dport, dst_if);
+		else
+			return udp6_lib_lookup(net, src6, tuple->sport,
+					       dst6, tuple->dport, dst_if);
+	//} else if (tuple->proto == IPPROTO_ICMP) {
+	//	if (tuple->family == AF_INET)
+	//		return net->ipv4.icmp_sk;
+	//	else
+	//		return net->ipv6.icmp_sk;
+	} else {
+		return ERR_PTR(-EOPNOTSUPP);
+	}
+
+	return NULL;
+}
+
+// TODO: Replace flags with ctx
+BPF_CALL_5(bpf_sk_lookup, struct bpf_sock_tuple *, tuple, u32, tlen,
+	   struct bpf_sock_info *, result, u32, rlen, u64, flags)
+{
+	struct sock *sk;
+	struct net *net;
+	int err = 0;
+
+	// Assumption: BPF is executed under rcu_read_lock()
+	if (tlen != sizeof(struct bpf_sock_tuple) ||
+	    rlen != sizeof(struct bpf_sock_info)) {
+		err = -EINVAL;
+		goto clear_dst;
+	}
+
+	// TODO: Ensure that we are in init net
+	if (flags & BPF_F_SEARCH_ALL_NS) {
+		for_each_net_rcu(net) {
+			sk = sk_lookup(net, tuple);
+			if (sk)
+				break;
+		}
+		net = NULL;
+	} else {
+		net = get_net_ns_by_id(&init_net, tuple->netns_id);
+		if (unlikely(!net)) {
+			err = -EINVAL;
+			goto clear_dst;
+		}
+		sk = sk_lookup(net, tuple);
+	}
+	if (IS_ERR_OR_NULL(sk)) {
+		err = PTR_ERR(sk) ? PTR_ERR(sk) : -ENOENT;
+		goto release_net;
+	}
+
+	fill_bpf_sock_info(sk, result);
+
+release_net:
+	if (net)
+		put_net(net);
+clear_dst:
+	if (err)
+		memset(result, 0, rlen);
+	return err;
+}
+
+static const struct bpf_func_proto bpf_sk_lookup_proto = {
+	.func		= bpf_sk_lookup,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_MEM,
+	.arg2_type	= ARG_CONST_SIZE,
+	.arg3_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg4_type	= ARG_CONST_SIZE,
+	.arg5_type	= ARG_ANYTHING,
+};
+
 static const struct bpf_func_proto *
 bpf_base_func_proto(enum bpf_func_id func_id)
 {
@@ -3445,6 +3581,8 @@ tc_cls_act_func_proto(enum bpf_func_id func_id)
 		return &bpf_get_socket_cookie_proto;
 	case BPF_FUNC_get_socket_uid:
 		return &bpf_get_socket_uid_proto;
+	case BPF_FUNC_sk_lookup:
+		return &bpf_sk_lookup_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -3466,6 +3604,8 @@ xdp_func_proto(enum bpf_func_id func_id)
 		return &bpf_xdp_redirect_proto;
 	case BPF_FUNC_redirect_map:
 		return &bpf_xdp_redirect_map_proto;
+	case BPF_FUNC_sk_lookup:
+		return &bpf_sk_lookup_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -3493,6 +3633,8 @@ lwt_inout_func_proto(enum bpf_func_id func_id)
 		return &bpf_get_smp_processor_id_proto;
 	case BPF_FUNC_skb_under_cgroup:
 		return &bpf_skb_under_cgroup_proto;
+	case BPF_FUNC_sk_lookup:
+		return &bpf_sk_lookup_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -3532,6 +3674,8 @@ static const struct bpf_func_proto *sk_skb_func_proto(enum bpf_func_id func_id)
 		return &bpf_get_socket_uid_proto;
 	case BPF_FUNC_sk_redirect_map:
 		return &bpf_sk_redirect_map_proto;
+	case BPF_FUNC_sk_lookup:
+		return &bpf_sk_lookup_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
