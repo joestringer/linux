@@ -1340,7 +1340,6 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
 	return -EACCES;
 }
 
-/* XXX: Hook this into check_mem_access() */
 static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
 			     int size)
 {
@@ -1356,28 +1355,12 @@ static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
 		return -EACCES;
 	}
 
-	if (bpf_sock_ops_is_valid_access(off, size, t, &info)) {
-		/* XXX: Compare with check_ctx_access() above?
-		 *       What kind of checks do we need for socket access?
-		 */
-
-		// On success, consider what valid_access might return? */
-		//	if (reg_type == SCALAR_VALUE)
-		//		mark_reg_unknown(env, regs, value_regno);
-		//	else
-		//		mark_reg_known_zero(env, regs,
-		//				    value_regno);
-		//	regs[value_regno].id = 0;
-		//	regs[value_regno].off = 0;
-		//	regs[value_regno].range = 0;
-		//	regs[value_regno].type = reg_type;
-
-		// return 0;
+	if (!bpf_sock_ops_is_valid_access(off, size, t, &info)) {
+		verbose(env, "invalid bpf_sock_ops access off=%d size=%d\n", off, size);
 		return -EACCES;
 	}
 
-	verbose(env, "invalid bpf_sock_ops access off=%d size=%d\n", off, size);
-	return -EACCES;
+	return 0;
 }
 
 static bool __is_pointer_value(bool allow_ptr_leaks,
@@ -1746,6 +1729,13 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 			mark_reg_unknown(env, regs, value_regno);
 
 	} else if (reg->type == PTR_TO_SOCKET) {
+		if (t == BPF_WRITE && value_regno >= 0 &&
+		    is_pointer_value(env, value_regno)) {
+			verbose(env, "R%d leaks addr into socket\n",
+				value_regno);
+			return -EACCES;
+		}
+
 		err = check_sock_access(env, regno, off, size);
 		if (!err && t == BPF_READ && value_regno >= 0)
 			mark_reg_unknown(env, regs, value_regno);
