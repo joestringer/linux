@@ -1369,7 +1369,7 @@ static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
 	}
 
 	if (bpf_sock_ops_is_valid_access(off, size, t, &info)) {
-		update_ctx_access(env, off, size, &info, reg_type);
+		update_ctx_access(env, insn_idx, off, size, &info, reg_type);
 		return 0;
 	}
 
