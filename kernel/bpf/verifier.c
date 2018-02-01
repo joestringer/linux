@@ -1340,8 +1340,9 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
 	return -EACCES;
 }
 
+/* XXX: Hook this into check_mem_access() */
 static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
-			     int size, bool zero_size_allowed)
+			     int size)
 {
 	struct bpf_reg_state *regs = cur_regs(env);
 	struct bpf_reg_state *reg = &regs[regno];
@@ -1355,15 +1356,24 @@ static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
 		return -EACCES;
 	}
 
-	if (size < 0 || (size == 0 && !zero_size_allowed)) {
-		verbose(env, "invalid access to socket, off=%d size=%d, R%d(id=%d,off=%d,r=%d)\n",
-			off, size, regno, reg->id, reg->off, reg->range);
-		return -EACCES;
-	}
-
 	if (bpf_sock_ops_is_valid_access(off, size, t, &info)) {
-		update_ctx_access(env, insn_idx, off, size, &info, reg_type);
-		return 0;
+		/* XXX: Compare with check_ctx_access() above?
+		 *       What kind of checks do we need for socket access?
+		 */
+
+		// On success, consider what valid_access might return? */
+		//	if (reg_type == SCALAR_VALUE)
+		//		mark_reg_unknown(env, regs, value_regno);
+		//	else
+		//		mark_reg_known_zero(env, regs,
+		//				    value_regno);
+		//	regs[value_regno].id = 0;
+		//	regs[value_regno].off = 0;
+		//	regs[value_regno].range = 0;
+		//	regs[value_regno].type = reg_type;
+
+		// return 0;
+		return -EACCES;
 	}
 
 	verbose(env, "invalid bpf_sock_ops access off=%d size=%d\n", off, size);
@@ -1734,6 +1744,12 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 		err = check_packet_access(env, regno, off, size, false);
 		if (!err && t == BPF_READ && value_regno >= 0)
 			mark_reg_unknown(env, regs, value_regno);
+
+	} else if (reg->type == PTR_TO_SOCKET) {
+		err = check_sock_access(env, regno, off, size);
+		if (!err && t == BPF_READ && value_regno >= 0)
+			mark_reg_unknown(env, regs, value_regno);
+
 	} else {
 		verbose(env, "R%d invalid mem access '%s'\n", regno,
 			reg_type_str[reg->type]);
@@ -1882,9 +1898,6 @@ static int check_helper_mem_access(struct bpf_verifier_env *env, int regno,
 	case PTR_TO_MAP_VALUE:
 		return check_map_access(env, regno, reg->off, access_size,
 					zero_size_allowed);
-	case PTR_TO_SOCKET:
-		return check_sock_access(env, regno, reg->off, access_size,
-					 zero_size_allowed);
 	default: /* scalar_value|ptr_to_stack or invalid ptr */
 		return check_stack_boundary(env, regno, access_size,
 					    zero_size_allowed, meta);
