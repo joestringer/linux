@@ -954,6 +954,11 @@ static bool is_spillable_regtype(enum bpf_reg_type type)
 	case PTR_TO_PACKET_END:
 	case CONST_PTR_TO_MAP:
 		return true;
+	case PTR_TO_SOCKET:
+		/* XXX: Disable spilling this type so it's easier to track
+		 *      for now. Once basic stuff is working, figure out how
+		 *      to reliably trigger register spills and check this. */
+		/* fall through */
 	default:
 		return false;
 	}
@@ -1341,6 +1346,36 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
 	return -EACCES;
 }
 
+static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
+			     int size, bool zero_size_allowed)
+{
+	struct bpf_reg_state *regs = cur_regs(env);
+	struct bpf_reg_state *reg = &regs[regno];
+	struct bpf_insn_access_aux info = {
+		.reg_type = *reg_type,
+	};
+
+	if (reg->smin_value < 0) {
+		verbose(env, "R%d min value is negative, either use unsigned index or do a if (index >=0) check.\n",
+			regno);
+		return -EACCES;
+	}
+
+	if (size < 0 || (size == 0 && !zero_size_allowed)) {
+		verbose(env, "invalid access to socket, off=%d size=%d, R%d(id=%d,off=%d,r=%d)\n",
+			off, size, regno, reg->id, reg->off, reg->range);
+		return -EACCES;
+	}
+
+	if (bpf_sock_ops_is_valid_access(off, size, t, &info)) {
+		update_ctx_access(env, off, size, &info);
+		return 0;
+	}
+
+	verbose(env, "invalid bpf_sock_ops access off=%d size=%d\n", off, size);
+	return -EACCES;
+}
+
 static bool __is_pointer_value(bool allow_ptr_leaks,
 			       const struct bpf_reg_state *reg)
 {
@@ -1448,6 +1483,9 @@ static int check_ptr_alignment(struct bpf_verifier_env *env,
 		 * aligned.
 		 */
 		strict = true;
+		break;
+	case PTR_TO_SOCKET:
+		pointer_desc = "sock ";
 		break;
 	default:
 		break;
@@ -1850,6 +1888,9 @@ static int check_helper_mem_access(struct bpf_verifier_env *env, int regno,
 	case PTR_TO_MAP_VALUE:
 		return check_map_access(env, regno, reg->off, access_size,
 					zero_size_allowed);
+	case PTR_TO_SOCKET:
+		return check_sock_access(env, regno, reg->off, access_size,
+					 zero_size_allowed);
 	default: /* scalar_value|ptr_to_stack or invalid ptr */
 		return check_stack_boundary(env, regno, access_size,
 					    zero_size_allowed, meta);
@@ -4224,6 +4265,13 @@ static bool regsafe(struct bpf_reg_state *rold, struct bpf_reg_state *rcur,
 			return false;
 		/* Check our ids match any regs they're supposed to */
 		return check_ids(rold->id, rcur->id, idmap);
+	case PTR_TO_SOCKET:
+		/* XXX: I think that the access here should be about the same
+		 *      as access to a packet? Pointers to sockets can be
+		 *      offset from the actual socket pointer and still be
+		 *      fine, it doesn't need to be exact like a context ptr.
+		 */
+		/* fall through */
 	case PTR_TO_PACKET_META:
 	case PTR_TO_PACKET:
 		if (rcur->type != rold->type)
