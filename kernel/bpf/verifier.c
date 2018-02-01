@@ -1369,7 +1369,7 @@ static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
 	}
 
 	if (bpf_sock_ops_is_valid_access(off, size, t, &info)) {
-		update_ctx_access(env, off, size, &info);
+		update_ctx_access(env, off, size, &info, reg_type);
 		return 0;
 	}
 
@@ -5182,7 +5182,7 @@ static int convert_ctx_accesses(struct bpf_verifier_env *env)
 		}
 	}
 
-	if (!ops->convert_ctx_access)
+	if (!ops->convert_ctx_access) // && !env->there_was_a_socket)
 		return 0;
 
 	insn = env->prog->insnsi + delta;
