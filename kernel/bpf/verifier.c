@@ -1310,8 +1310,8 @@ static int check_packet_access(struct bpf_verifier_env *env, u32 regno, int off,
 	return err;
 }
 
-static void update_ctx_access(struct bpf_verifier_env *env, int off, int size,
-			      struct bpf_insn_access_aux *info,
+static void update_ctx_access(struct bpf_verifier_env *env, int insn_idx,
+			      int off, int size, struct bpf_insn_access_aux *info,
 			      enum bpf_reg_type *reg_type)
 {
 	/* A non zero info.ctx_field_size indicates that this field is a
@@ -1339,7 +1339,7 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
 
 	if (env->ops->is_valid_access &&
 	    env->ops->is_valid_access(off, size, t, &info)) {
-		update_ctx_access(env, off, size, &info, reg_type);
+		update_ctx_access(env, insn_idx, off, size, &info, reg_type);
 		return 0;
 	}
 
