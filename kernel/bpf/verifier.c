@@ -1305,6 +1305,24 @@ static int check_packet_access(struct bpf_verifier_env *env, u32 regno, int off,
 	return err;
 }
 
+static void update_ctx_access(struct bpf_verifier_env *env, int off, int size,
+			      struct bpf_insn_access_aux *info)
+{
+	/* A non zero info.ctx_field_size indicates that this field is a
+	 * candidate for later verifier transformation to load the whole
+	 * field and then apply a mask when accessed with a narrower
+	 * access than actual ctx access size. A zero info.ctx_field_size
+	 * will only allow for whole field access and rejects any other
+	 * type of narrower access.
+	 */
+	*reg_type = info->reg_type;
+
+	env->insn_aux_data[insn_idx].ctx_field_size = info->ctx_field_size;
+	/* remember the offset of last byte accessed in ctx */
+	if (env->prog->aux->max_ctx_offset < off + size)
+		env->prog->aux->max_ctx_offset = off + size;
+}
+
 /* check access to 'struct bpf_context' fields.  Supports fixed offsets only */
 static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off, int size,
 			    enum bpf_access_type t, enum bpf_reg_type *reg_type)
@@ -1315,19 +1333,7 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
 
 	if (env->ops->is_valid_access &&
 	    env->ops->is_valid_access(off, size, t, &info)) {
-		/* A non zero info.ctx_field_size indicates that this field is a
-		 * candidate for later verifier transformation to load the whole
-		 * field and then apply a mask when accessed with a narrower
-		 * access than actual ctx access size. A zero info.ctx_field_size
-		 * will only allow for whole field access and rejects any other
-		 * type of narrower access.
-		 */
-		*reg_type = info.reg_type;
-
-		env->insn_aux_data[insn_idx].ctx_field_size = info.ctx_field_size;
-		/* remember the offset of last byte accessed in ctx */
-		if (env->prog->aux->max_ctx_offset < off + size)
-			env->prog->aux->max_ctx_offset = off + size;
+		update_ctx_access(env, off, size, &info);
 		return 0;
 	}
 

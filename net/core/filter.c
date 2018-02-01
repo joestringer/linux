@@ -3902,9 +3902,9 @@ void bpf_warn_invalid_xdp_action(u32 act)
 }
 EXPORT_SYMBOL_GPL(bpf_warn_invalid_xdp_action);
 
-static bool sock_ops_is_valid_access(int off, int size,
-				     enum bpf_access_type type,
-				     struct bpf_insn_access_aux *info)
+bool bpf_sock_ops_is_valid_access(int off, int size,
+				  enum bpf_access_type type,
+				  struct bpf_insn_access_aux *info)
 {
 	const int size_default = sizeof(__u32);
 
@@ -4417,11 +4417,11 @@ static u32 xdp_convert_ctx_access(enum bpf_access_type type,
 	return insn - insn_buf;
 }
 
-static u32 sock_ops_convert_ctx_access(enum bpf_access_type type,
-				       const struct bpf_insn *si,
-				       struct bpf_insn *insn_buf,
-				       struct bpf_prog *prog,
-				       u32 *target_size)
+u32 bpf_sock_ops_convert_ctx_access(enum bpf_access_type type,
+				    const struct bpf_insn *si,
+				    struct bpf_insn *insn_buf,
+				    struct bpf_prog *prog,
+				    u32 *target_size)
 {
 	struct bpf_insn *insn = insn_buf;
 	int off;
@@ -4853,8 +4853,8 @@ const struct bpf_prog_ops cg_sock_prog_ops = {
 
 const struct bpf_verifier_ops sock_ops_verifier_ops = {
 	.get_func_proto		= sock_ops_func_proto,
-	.is_valid_access	= sock_ops_is_valid_access,
-	.convert_ctx_access	= sock_ops_convert_ctx_access,
+	.is_valid_access	= bpf_sock_ops_is_valid_access,
+	.convert_ctx_access	= bpf_sock_ops_convert_ctx_access,
 };
 
 const struct bpf_prog_ops sock_ops_prog_ops = {

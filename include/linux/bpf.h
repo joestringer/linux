@@ -678,4 +678,13 @@ extern const struct bpf_func_proto bpf_sock_map_update_proto;
 void bpf_user_rnd_init_once(void);
 u64 bpf_user_rnd_u32(u64 r1, u64 r2, u64 r3, u64 r4, u64 r5);
 
+bool bpf_sock_ops_is_valid_access(int off, int size,
+				  enum bpf_access_type type,
+				  struct bpf_insn_access_aux *info);
+u32 bpf_sock_ops_convert_ctx_access(enum bpf_access_type type,
+				    const struct bpf_insn *si,
+				    struct bpf_insn *insn_buf,
+				    struct bpf_prog *prog,
+				    u32 *target_size);
+
 #endif /* _LINUX_BPF_H */
