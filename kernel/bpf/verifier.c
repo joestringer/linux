@@ -79,8 +79,8 @@ static const struct bpf_verifier_ops * const bpf_verifier_ops[] = {
  * (like pointer plus pointer becomes SCALAR_VALUE type)
  *
  * When verifier sees load or store instructions the type of base register
- * can be: PTR_TO_MAP_VALUE, PTR_TO_CTX, PTR_TO_STACK. These are three pointer
- * types recognized by check_mem_access() function.
+ * can be: PTR_TO_MAP_VALUE, PTR_TO_CTX, PTR_TO_STACK, PTR_TO_SOCKET. These are
+ * four pointer types recognized by check_mem_access() function.
  *
  * PTR_TO_MAP_VALUE means that this register is pointing to 'map element value'
  * and the range of [ptr, ptr + map's value_size) is accessible.
@@ -212,6 +212,22 @@ static bool type_is_pkt_pointer(enum bpf_reg_type type)
 	       type == PTR_TO_PACKET_META;
 }
 
+static bool type_is_sk_pointer(enum bpf_reg_type type)
+{
+	return type == PTR_TO_SOCKET ||
+	       type == PTR_TO_SOCKET_OR_NULL;
+}
+
+static bool type_is_refcounted(enum bpf_reg_type type)
+{
+	return type == PTR_TO_SOCKET;
+}
+
+static bool reg_is_refcounted(const struct bpf_reg_state *reg)
+{
+	return type_is_refcounted(reg->type);
+}
+
 /* string representation of 'enum bpf_reg_type' */
 static const char * const reg_type_str[] = {
 	[NOT_INIT]		= "?",
@@ -224,6 +240,8 @@ static const char * const reg_type_str[] = {
 	[PTR_TO_PACKET]		= "pkt",
 	[PTR_TO_PACKET_META]	= "pkt_meta",
 	[PTR_TO_PACKET_END]	= "pkt_end",
+	[PTR_TO_SOCKET_OR_NULL] = "sock_or_null",
+	[PTR_TO_SOCKET]		= "sock",
 };
 
 static void print_liveness(struct bpf_verifier_env *env,
@@ -655,6 +673,7 @@ static void __mark_reg_unknown(struct bpf_reg_state *reg)
 	reg->off = 0;
 	reg->var_off = tnum_unknown;
 	reg->frameno = 0;
+	reg->unref_func_id = 0;
 	__mark_reg_unbounded(reg);
 }
 
@@ -953,12 +972,9 @@ static bool is_spillable_regtype(enum bpf_reg_type type)
 	case PTR_TO_PACKET_META:
 	case PTR_TO_PACKET_END:
 	case CONST_PTR_TO_MAP:
-		return true;
 	case PTR_TO_SOCKET:
-		/* XXX: Disable spilling this type so it's easier to track
-		 *      for now. Once basic stuff is working, figure out how
-		 *      to reliably trigger register spills and check this. */
-		/* fall through */
+	case PTR_TO_SOCKET_OR_NULL:
+		return true;
 	default:
 		return false;
 	}
@@ -1340,14 +1356,15 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
 	return -EACCES;
 }
 
+/* XXX: Revisit this, is 'info' really needed? */
 static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
 			     int size)
 {
 	struct bpf_reg_state *regs = cur_regs(env);
 	struct bpf_reg_state *reg = &regs[regno];
-	struct bpf_insn_access_aux info = {
-		.reg_type = *reg_type,
-	};
+	struct bpf_insn_access_aux info = {};
+	//	.reg_type = *reg_type,
+	//};
 
 	if (reg->smin_value < 0) {
 		verbose(env, "R%d min value is negative, either use unsigned index or do a if (index >=0) check.\n",
@@ -1356,7 +1373,8 @@ static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
 	}
 
 	if (!bpf_sock_ops_is_valid_access(off, size, t, &info)) {
-		verbose(env, "invalid bpf_sock_ops access off=%d size=%d\n", off, size);
+		verbose(env, "invalid bpf_sock_ops access off=%d size=%d\n",
+			off, size);
 		return -EACCES;
 	}
 
@@ -1956,6 +1974,10 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 regno,
 		expected_type = PTR_TO_CTX;
 		if (type != expected_type)
 			goto err_type;
+	} else if (arg_type == ARG_PTR_TO_SOCKET) {
+		expected_type = PTR_TO_SOCKET;
+		if (type != expected_type)
+			goto err_type;
 	} else if (arg_type_is_mem_ptr(arg_type)) {
 		expected_type = PTR_TO_STACK;
 		/* One exception here. In case function allows for NULL to be
@@ -2188,6 +2210,28 @@ static bool check_raw_mode_ok(const struct bpf_func_proto *fn)
 	return count <= 1;
 }
 
+static bool check_refcount_ok(const struct bpf_func_proto *fn)
+{
+	int count = 0;
+
+	if (type_is_refcounted(fn->arg1_type))
+		count++;
+	if (type_is_refcounted(fn->arg2_type))
+		count++;
+	if (type_is_refcounted(fn->arg3_type))
+		count++;
+	if (type_is_refcounted(fn->arg4_type))
+		count++;
+	if (type_is_refcounted(fn->arg5_type))
+		count++;
+
+	/* We only support one arg being unreferenced at the moment,
+	 * which is sufficient for the helper functions we have
+	 * right now.
+	 */
+	return count <= 1;
+}
+
 static bool check_args_pair_invalid(enum bpf_arg_type arg_curr,
 				    enum bpf_arg_type arg_next)
 {
@@ -2218,7 +2262,8 @@ static bool check_arg_pair_ok(const struct bpf_func_proto *fn)
 static int check_func_proto(const struct bpf_func_proto *fn)
 {
 	return check_raw_mode_ok(fn) &&
-	       check_arg_pair_ok(fn) ? 0 : -EINVAL;
+	       check_arg_pair_ok(fn) &&
+	       check_refcount_ok(fn) ? 0 : -EINVAL;
 }
 
 /* Packet data might have moved, any old PTR_TO_PACKET[_META,_END]
@@ -2250,6 +2295,37 @@ static void clear_all_pkt_pointers(struct bpf_verifier_env *env)
 
 	for (i = 0; i <= vstate->curframe; i++)
 		__clear_all_pkt_pointers(env, vstate->frame[i]);
+}
+
+static void invalidate_refcounted_pointers(struct bpf_verifier_env *env,
+					   struct bpf_func_proto *fn)
+{
+	struct bpf_verifier_state *vstate = env->cur_state;
+	int i, id = 0;
+
+	for (i = 0; i < BPF_REG_6; i++) {
+		if (reg_is_refcounted(&regs[i])) {
+			id = regs[i].id;
+			break;
+		}
+	}
+
+	for (i = 0; i <= vstate->curframe; i++) {
+		struct bpf_reg_state *regs = state->regs, *reg;
+
+		for (i = 0; i < MAX_BPF_REG; i++)
+			if (reg_is_refcounted(&regs[i]) &&
+			    regs[i].id == id)
+				mark_reg_unknown(env, regs, i);
+
+		for (i = 0; i < state->allocated_stack / BPF_REG_SIZE; i++) {
+			if (state->stack[i].slot_type[0] != STACK_SPILL)
+				continue;
+			reg = &state->stack[i].spilled_ptr;
+			if (reg_is_refcounted(reg) && reg->id = id)
+				__mark_reg_unknown(reg);
+		}
+	}
 }
 
 static int check_func_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
@@ -2357,6 +2433,11 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
 	return 0;
 }
 
+static bool is_unref_function(struct bpf_func_proto *fn, int func_id)
+{
+	return fn->unref_func_id == func_id;
+}
+
 static int check_helper_call(struct bpf_verifier_env *env, int func_id, int insn_idx)
 {
 	const struct bpf_func_proto *fn = NULL;
@@ -2444,6 +2525,13 @@ static int check_helper_call(struct bpf_verifier_env *env, int func_id, int insn
 		check_reg_arg(env, caller_saved[i], DST_OP_NO_MARK);
 	}
 
+	/* If the function was an unref() function, mark all copies of the same
+	 * pointer as "freed" in all registers and in the stack.
+	 */
+	if (is_unref_function(fn, func_id)) {
+		invalidate_refcounted_pointers(env, fn);
+	}
+
 	/* update return register (already marked as written above) */
 	if (fn->ret_type == RET_INTEGER) {
 		/* sets type to SCALAR_VALUE */
@@ -2473,6 +2561,12 @@ static int check_helper_call(struct bpf_verifier_env *env, int func_id, int insn
 			insn_aux->map_ptr = meta.map_ptr;
 		else if (insn_aux->map_ptr != meta.map_ptr)
 			insn_aux->map_ptr = BPF_MAP_PTR_POISON;
+	} else if (fn->ret_type == RET_PTR_TO_SOCKET_OR_NULL) {
+		regs[BPF_REG_0].type = PTR_TO_SOCKET_OR_NULL;
+		mark_reg_known_zero(env, regs, BPF_REG_0);
+		regs[BPF_REG_0].off = 0;
+		regs[BPF_REG_0].id = ++env->id_gen;
+		regs[BPF_REG_0].unref_func_id = fn->unref_func_id;
 	} else {
 		verbose(env, "unknown return type %d of func %s#%d\n",
 			fn->ret_type, func_id_name(func_id), func_id);
@@ -2583,20 +2677,20 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 		return -EACCES;
 	}
 
-	if (ptr_reg->type == PTR_TO_MAP_VALUE_OR_NULL) {
-		verbose(env, "R%d pointer arithmetic on PTR_TO_MAP_VALUE_OR_NULL prohibited, null-check it first\n",
-			dst);
+	switch (ptr_reg->type) {
+	case PTR_TO_MAP_VALUE_OR_NULL:
+		verbose(env, "R%d pointer arithmetic on %s prohibited, null-check it first\n",
+			dst, reg_type_str[ptr_reg->type]);
 		return -EACCES;
-	}
-	if (ptr_reg->type == CONST_PTR_TO_MAP) {
-		verbose(env, "R%d pointer arithmetic on CONST_PTR_TO_MAP prohibited\n",
-			dst);
+	case CONST_PTR_TO_MAP:
+	case PTR_TO_PACKET_END:
+	case PTR_TO_SOCKET:
+	case PTR_TO_SOCKET_OR_NULL:
+		verbose(env, "R%d pointer arithmetic on %s prohibited\n",
+			dst, reg_type_str[ptr_reg->type]);
 		return -EACCES;
-	}
-	if (ptr_reg->type == PTR_TO_PACKET_END) {
-		verbose(env, "R%d pointer arithmetic on PTR_TO_PACKET_END prohibited\n",
-			dst);
-		return -EACCES;
+	default:
+		break;
 	}
 
 	/* In case of 'scalar += pointer', dst_reg inherits pointer type and id.
@@ -3499,12 +3593,18 @@ static void reg_combine_min_max(struct bpf_reg_state *true_src,
 	}
 }
 
-static void mark_map_reg(struct bpf_reg_state *regs, u32 regno, u32 id,
-			 bool is_null)
+static bool type_is_pointer_or_null(enum bpf_reg_type type)
+{
+	return type == PTR_TO_MAP_VALUE_OR_NULL ||
+	       type == PTR_TO_SOCKET_OR_NULL;
+}
+
+static void mark_ptr_or_null_reg(struct bpf_reg_state *regs, u32 regno, u32 id,
+				 bool is_null)
 {
 	struct bpf_reg_state *reg = &regs[regno];
 
-	if (reg->type == PTR_TO_MAP_VALUE_OR_NULL && reg->id == id) {
+	if (reg_type_is_pointer_or_null(reg->type) && reg->id == id) {
 		/* Old offset (both fixed and variable parts) should
 		 * have been known-zero, because we don't allow pointer
 		 * arithmetic on pointers that might be NULL.
@@ -3520,22 +3620,26 @@ static void mark_map_reg(struct bpf_reg_state *regs, u32 regno, u32 id,
 		} else if (reg->map_ptr->inner_map_meta) {
 			reg->type = CONST_PTR_TO_MAP;
 			reg->map_ptr = reg->map_ptr->inner_map_meta;
-		} else {
+		} else if (reg->type == PTR_TO_MAP_VALUE_OR_NULL) {
 			reg->type = PTR_TO_MAP_VALUE;
+		} else if (reg->type == PTR_TO_SOCKET_OR_NULL) {
+			reg->type = PTR_TO_SOCKET;
 		}
-		/* We don't need id from this point onwards anymore, thus we
-		 * should better reset it, so that state pruning has chances
-		 * to take effect.
-		 */
-		reg->id = 0;
+		if (is_null || !reg_is_refcounted(reg)) {
+			/* We don't need id from this point onwards anymore,
+			 * thus we should better reset it, so that state
+			 * pruning has chances to take effect.
+			 */
+			reg->id = 0;
+		}
 	}
 }
 
 /* The logic is similar to find_good_pkt_pointers(), both could eventually
  * be folded together at some point.
  */
-static void mark_map_regs(struct bpf_verifier_state *vstate, u32 regno,
-			  bool is_null)
+static void mark_ptr_or_null_regs(struct bpf_verifier_state *vstate, u32 regno,
+				  bool is_null)
 {
 	struct bpf_func_state *state = vstate->frame[vstate->curframe];
 	struct bpf_reg_state *regs = state->regs;
@@ -3543,14 +3647,15 @@ static void mark_map_regs(struct bpf_verifier_state *vstate, u32 regno,
 	int i, j;
 
 	for (i = 0; i < MAX_BPF_REG; i++)
-		mark_map_reg(regs, i, id, is_null);
+		mark_ptr_or_null_reg(regs, i, id, is_null);
 
 	for (j = 0; j <= vstate->curframe; j++) {
 		state = vstate->frame[j];
 		for (i = 0; i < state->allocated_stack / BPF_REG_SIZE; i++) {
 			if (state->stack[i].slot_type[0] != STACK_SPILL)
 				continue;
-			mark_map_reg(&state->stack[i].spilled_ptr, 0, id, is_null);
+			mark_ptr_or_null_reg(&state->stack[i].spilled_ptr, 0,
+					     id, is_null);
 		}
 	}
 }
@@ -3752,12 +3857,14 @@ static int check_cond_jmp_op(struct bpf_verifier_env *env,
 	/* detect if R == 0 where R is returned from bpf_map_lookup_elem() */
 	if (BPF_SRC(insn->code) == BPF_K &&
 	    insn->imm == 0 && (opcode == BPF_JEQ || opcode == BPF_JNE) &&
-	    dst_reg->type == PTR_TO_MAP_VALUE_OR_NULL) {
-		/* Mark all identical map registers in each branch as either
+	    type_is_pointer_or_null(dst_reg->type)) {
+		/* Mark all identical registers in each branch as either
 		 * safe or unknown depending R == 0 or R != 0 conditional.
 		 */
-		mark_map_regs(this_branch, insn->dst_reg, opcode == BPF_JNE);
-		mark_map_regs(other_branch, insn->dst_reg, opcode == BPF_JEQ);
+		mark_ptr_or_null_regs(this_branch, insn->dst_reg,
+				      opcode == BPF_JNE);
+		mark_ptr_or_null_regs(other_branch, insn->dst_reg,
+				      opcode == BPF_JEQ);
 	} else if (!try_match_pkt_pointers(insn, dst_reg, &regs[insn->src_reg],
 					   this_branch, other_branch) &&
 		   is_pointer_value(env, insn->dst_reg)) {
@@ -4262,13 +4369,6 @@ static bool regsafe(struct bpf_reg_state *rold, struct bpf_reg_state *rcur,
 			return false;
 		/* Check our ids match any regs they're supposed to */
 		return check_ids(rold->id, rcur->id, idmap);
-	case PTR_TO_SOCKET:
-		/* XXX: I think that the access here should be about the same
-		 *      as access to a packet? Pointers to sockets can be
-		 *      offset from the actual socket pointer and still be
-		 *      fine, it doesn't need to be exact like a context ptr.
-		 */
-		/* fall through */
 	case PTR_TO_PACKET_META:
 	case PTR_TO_PACKET:
 		if (rcur->type != rold->type)
@@ -4295,6 +4395,8 @@ static bool regsafe(struct bpf_reg_state *rold, struct bpf_reg_state *rcur,
 	case PTR_TO_CTX:
 	case CONST_PTR_TO_MAP:
 	case PTR_TO_PACKET_END:
+	case PTR_TO_SOCKET:
+	case PTR_TO_SOCKET_OR_NULL:
 		/* Only valid matches are exact, which memcmp() above
 		 * would have accepted
 		 */
@@ -4657,6 +4759,15 @@ static int do_check(struct bpf_verifier_env *env)
 
 		regs = cur_regs(env);
 		env->insn_aux_data[insn_idx].seen = true;
+
+		/* XXX: Detect reference leak where the last register holding a
+		 *      reference is cleared without if (ptr) { free; }
+		 */
+
+		/* XXX: Detect reference leak where the end of a branch is
+		 *      reached without if (ptr) { free; }
+		 */
+
 		if (class == BPF_ALU || class == BPF_ALU64) {
 			err = check_alu_op(env, insn);
 			if (err)
@@ -4787,6 +4898,7 @@ static int do_check(struct bpf_verifier_env *env)
 					return -EINVAL;
 				}
 
+				/* XXX I think helper is ok, check func */
 				if (insn->src_reg == BPF_PSEUDO_CALL)
 					err = check_func_call(env, insn, &insn_idx);
 				else

@@ -115,7 +115,7 @@ enum bpf_arg_type {
 	/* the following constraints used to prototype bpf_memcmp() and other
 	 * functions that access data on eBPF program stack
 	 */
-	ARG_PTR_TO_MEM,		/* pointer to valid memory (stack, packet, map value) */
+	ARG_PTR_TO_MEM,		/* pointer to valid memory (stack, packet, map value, socket) */
 	ARG_PTR_TO_MEM_OR_NULL, /* pointer to valid memory or NULL */
 	ARG_PTR_TO_UNINIT_MEM,	/* pointer to memory does not need to be initialized,
 				 * helper function must fill all bytes or clear
@@ -127,6 +127,7 @@ enum bpf_arg_type {
 
 	ARG_PTR_TO_CTX,		/* pointer to context */
 	ARG_ANYTHING,		/* any (initialized) argument is ok */
+	ARG_PTR_TO_SOCKET,	/* pointer to bpf_sock_ops */
 };
 
 /* type of values returned from helper functions */
@@ -134,11 +135,16 @@ enum bpf_return_type {
 	RET_INTEGER,			/* function returns integer */
 	RET_VOID,			/* function doesn't return anything */
 	RET_PTR_TO_MAP_VALUE_OR_NULL,	/* returns a pointer to map elem value or NULL */
+	RET_PTR_TO_SOCKET_OR_NULL,	/* returns a pointer to a socket or NULL */
 };
 
 /* eBPF function prototype used by verifier to allow BPF_CALLs from eBPF programs
  * to in-kernel helper functions and for adjusting imm32 field in BPF_CALL
  * instructions after verifying
+ *
+ * @ref_func_id: Functions that allocate or free some resource must set this
+ *		 field to the 'enum bpf_func_id' of the function which frees
+ *		 the resource.
  */
 struct bpf_func_proto {
 	u64 (*func)(u64 r1, u64 r2, u64 r3, u64 r4, u64 r5);
@@ -150,6 +156,7 @@ struct bpf_func_proto {
 	enum bpf_arg_type arg3_type;
 	enum bpf_arg_type arg4_type;
 	enum bpf_arg_type arg5_type;
+	enum bpf_func_id ref_func_id;
 };
 
 /* bpf_context is intentionally undefined structure. Pointer to bpf_context is
@@ -184,7 +191,8 @@ enum bpf_reg_type {
 	PTR_TO_PACKET_META,	 /* skb->data - meta_len */
 	PTR_TO_PACKET,		 /* reg points to skb->data */
 	PTR_TO_PACKET_END,	 /* skb->data + headlen */
-	PTR_TO_SOCKET,		 /* reg points to something like the sock XXX */
+	PTR_TO_SOCKET,		 /* reg points to struct bpf_sock_ops */
+	PTR_TO_SOCKET_OR_NULL,	 /* reg points to struct bpf_sock_ops or NULL */
 };
 
 /* The information passed from prog-specific *_is_valid_access
