@@ -2141,6 +2141,41 @@ union bpf_attr {
  *		request in the skb.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * struct bpf_sock_ops *bpf_sk_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
+ * 	Decription
+ * 		Look for TCP socket matching 'tuple'. The return value must
+ * 		be checked, and if non-NULL, released via bpf_sk_release().
+ * 		@ctx: pointer to ctx
+ * 		@tuple: pointer to struct bpf_sock_tuple
+ * 		@tuple_size: size of the tuple
+ * 		@netns: network namespace id
+ * 		@flags: flags value
+ * 	Return
+ * 		pointer to socket ops on success, or
+ * 		NULL in case of failure
+ *
+ * struct bpf_sock_ops *bpf_sk_lookup_udp(ctx, tuple, tuple_size, netns, flags)
+ * 	Decription
+ * 		Look for UDP socket matching 'tuple'. The return value must
+ * 		be checked, and if non-NULL, released via bpf_sk_release().
+ * 		@ctx: pointer to ctx
+ * 		@tuple: pointer to struct bpf_sock_tuple
+ * 		@tuple_size: size of the tuple
+ * 		@netns: network namespace id
+ * 		@flags: flags value
+ * 	Return
+ * 		pointer to socket ops on success, or
+ * 		NULL in case of failure
+ *
+ *  int bpf_sk_release(sock, flags)
+ * 	Description
+ * 		Release the reference held by 'sock'.
+ * 		@sock: Pointer reference to release. Must be found via
+ * 		       bpf_sk_lookup_xxx().
+ * 		@flags: flags value
+ * 	Return
+ * 		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -2226,7 +2261,10 @@ union bpf_attr {
 	FN(get_current_cgroup_id),	\
 	FN(get_local_storage),		\
 	FN(sk_select_reuseport),	\
-	FN(skb_ancestor_cgroup_id),
+	FN(skb_ancestor_cgroup_id),	\
+	FN(sk_lookup_tcp),		\
+	FN(sk_lookup_udp),		\
+	FN(sk_release),
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
  * function eBPF program intends to call
@@ -2393,6 +2431,20 @@ struct bpf_sock {
 	__u32 src_port;		/* Allows 4-byte read.
 				 * Stored in host byte order
 				 */
+};
+
+struct bpf_sock_tuple {
+	union {
+		__be32 ipv6[4];
+		__be32 ipv4;
+	} saddr;
+	union {
+		__be32 ipv6[4];
+		__be32 ipv4;
+	} daddr;
+	__be16 sport;
+	__be16 dport;
+	__u8 family;
 };
 
 #define XDP_PACKET_HEADROOM 256
