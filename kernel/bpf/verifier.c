@@ -250,7 +250,7 @@ static bool arg_type_is_refcounted(enum bpf_arg_type type)
  */
 static bool is_release_function(enum bpf_func_id func_id)
 {
-	return false;
+	return func_id == BPF_FUNC_sk_release;
 }
 
 /* string representation of 'enum bpf_reg_type' */

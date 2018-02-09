@@ -696,6 +696,21 @@ union bpf_attr {
  * int bpf_override_return(pt_regs, rc)
  *	@pt_regs: pointer to struct pt_regs
  *	@rc: the return value to set
+ *
+ * struct bpf_sock_ops *bpf_sk_lookup(ctx, tuple, tuple_size, netns, flags)
+ *     Look for socket matching 'tuple'. The return value must be checked,
+ *     and if non-NULL, released via bpf_sk_release().
+ *     @ctx: pointer to ctx
+ *     @tuple: pointer to struct bpf_sock_tuple
+ *     @tuple_size: size of the tuple
+ *     @flags: flags value
+ *     Return: pointer to socket ops on success or NULL
+ *
+ * int bpf_sk_release(sock, flags)
+ *     Release the reference held by 'sock'.
+ *     @sock: Pointer reference to release. Must be found via bpf_sk_lookup().
+ *     @flags: flags value
+ *     Return: 0 on success or negative error code
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -757,7 +772,9 @@ union bpf_attr {
 	FN(perf_prog_read_value),	\
 	FN(getsockopt),			\
 	FN(override_return),		\
-	FN(sock_ops_cb_flags_set),
+	FN(sock_ops_cb_flags_set),	\
+	FN(sk_lookup),			\
+	FN(sk_release),
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
  * function eBPF program intends to call
@@ -885,6 +902,22 @@ struct bpf_sock {
 	__u32 protocol;
 	__u32 mark;
 	__u32 priority;
+};
+
+struct bpf_sock_tuple {
+	union {
+		__be32 ipv6[4];
+		__be32 ipv4;
+	} saddr;
+	union {
+		__be32 ipv6[4];
+		__be32 ipv4;
+	} daddr;
+	__be16 sport;
+	__be16 dport;
+	__u32 dst_if;
+	__u8 family;
+	__u8 proto;
 };
 
 #define XDP_PACKET_HEADROOM 256

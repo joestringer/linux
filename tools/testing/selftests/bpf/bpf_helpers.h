@@ -86,6 +86,15 @@ static int (*bpf_perf_prog_read_value)(void *ctx, void *buf,
 	(void *) BPF_FUNC_perf_prog_read_value;
 static int (*bpf_override_return)(void *ctx, unsigned long rc) =
 	(void *) BPF_FUNC_override_return;
+static struct bpf_sock_ops *(*bpf_sk_lookup)(void *ctx,
+					     struct bpf_sock_tuple *tuple,
+					     int size, unsigned int netns_id,
+					     unsigned long long flags) =
+	(void *) BPF_FUNC_sk_lookup;
+static int (*bpf_sk_release)(struct bpf_sock_ops *sk,
+			     unsigned long long flags) =
+	(void *) BPF_FUNC_sk_release;
+
 
 /* llvm builtin functions that eBPF C program may use to
  * emit BPF_LD_ABS and BPF_LD_IND instructions
