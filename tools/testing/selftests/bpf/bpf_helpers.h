@@ -103,6 +103,13 @@ static int (*bpf_skb_get_xfrm_state)(void *ctx, int index, void *state,
 	(void *) BPF_FUNC_skb_get_xfrm_state;
 static int (*bpf_get_stack)(void *ctx, void *buf, int size, int flags) =
 	(void *) BPF_FUNC_get_stack;
+static struct bpf_sock *(*bpf_sk_lookup)(void *ctx,
+					 struct bpf_sock_tuple *tuple,
+					 int size, unsigned int netns_id,
+					 unsigned long long flags) =
+	(void *) BPF_FUNC_sk_lookup;
+static int (*bpf_sk_release)(struct bpf_sock *sk, unsigned long long flags) =
+	(void *) BPF_FUNC_sk_release;
 
 /* llvm builtin functions that eBPF C program may use to
  * emit BPF_LD_ABS and BPF_LD_IND instructions
