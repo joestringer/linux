@@ -1,5 +1,6 @@
 /* Copyright (c) 2011-2014 PLUMgrid, http://plumgrid.com
  * Copyright (c) 2016 Facebook
+ * Copyright (c) 2018 Covalent IO, Inc. http://covalent.io
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of version 2 of the GNU General Public
@@ -214,7 +215,42 @@ static bool type_is_pkt_pointer(enum bpf_reg_type type)
 
 static bool reg_type_may_be_null(enum bpf_reg_type type)
 {
-	return type == PTR_TO_MAP_VALUE_OR_NULL;
+	return type == PTR_TO_MAP_VALUE_OR_NULL ||
+	       type == PTR_TO_SOCKET_OR_NULL;
+}
+
+static bool type_is_refcounted(enum bpf_reg_type type)
+{
+	return type == PTR_TO_SOCKET;
+}
+
+static bool type_is_refcounted_or_null(enum bpf_reg_type type)
+{
+	return type == PTR_TO_SOCKET || type == PTR_TO_SOCKET_OR_NULL;
+}
+
+static bool reg_is_refcounted(const struct bpf_reg_state *reg)
+{
+	return type_is_refcounted(reg->type);
+}
+
+static bool reg_is_refcounted_or_null(const struct bpf_reg_state *reg)
+{
+	return type_is_refcounted_or_null(reg->type);
+}
+
+static bool arg_type_is_refcounted(enum bpf_arg_type type)
+{
+	return type == ARG_PTR_TO_SOCKET;
+}
+
+/* Determine whether the function releases some resources allocated by another
+ * function call. The first reference type argument will be assumed to be
+ * released by release_reference_regs().
+ */
+static bool is_release_function(enum bpf_func_id func_id)
+{
+	return false;
 }
 
 /* string representation of 'enum bpf_reg_type' */
@@ -974,6 +1010,31 @@ static bool register_is_null(struct bpf_reg_state *reg)
 	return reg->type == SCALAR_VALUE && tnum_equals_const(reg->var_off, 0);
 }
 
+static int count_references(struct bpf_verifier_env *env, int id)
+{
+	struct bpf_verifier_state *cur = env->cur_state;
+	struct bpf_reg_state *regs = cur_regs(env);
+	int i, j, count = 0;
+
+	for (i = BPF_REG_0; i < MAX_BPF_REG; i++)
+		if (reg_is_refcounted_or_null(&regs[i]) && regs[i].id == id)
+			count++;
+
+	for (j = 0; j <= cur->curframe; j++) {
+		struct bpf_func_state *frame = cur->frame[j];
+		struct bpf_reg_state *reg;
+
+		for_each_spilled_reg(i, frame, reg) {
+			if (!reg)
+				continue;
+			if (reg_is_refcounted_or_null(reg) && reg->id == id)
+				count++;
+		}
+	}
+
+	return count;
+}
+
 /* check_stack_read/write functions track spill/fill of registers,
  * stack boundary and alignment are checked in check_mem_access()
  */
@@ -984,6 +1045,18 @@ static int check_stack_write(struct bpf_verifier_env *env,
 	struct bpf_func_state *cur; /* state of the current function */
 	int i, slot = -off - 1, spi = slot / BPF_REG_SIZE, err;
 	enum bpf_reg_type type;
+
+	/* If this point in the stack currently holds a reference, it must not
+	 * be the last such reference, or writing here will cause a reference
+	 * leak.
+	 */
+	if (spi < state->allocated_stack &&
+	    state->stack[spi].slot_type[0] == STACK_SPILL &&
+	    reg_is_refcounted_or_null(&state->stack[spi].spilled_ptr) &&
+	    count_references(env, state->stack[spi].spilled_ptr.id) <= 1) {
+		verbose(env, "stack[%d] may hold unreleased reference\n", spi);
+		return -EINVAL;
+	}
 
 	err = realloc_func_state(state, round_up(slot + 1, BPF_REG_SIZE),
 				 true);
@@ -2192,6 +2265,28 @@ static bool check_raw_mode_ok(const struct bpf_func_proto *fn)
 	return count <= 1;
 }
 
+static bool check_refcount_ok(const struct bpf_func_proto *fn)
+{
+	int count = 0;
+
+	if (arg_type_is_refcounted(fn->arg1_type))
+		count++;
+	if (arg_type_is_refcounted(fn->arg2_type))
+		count++;
+	if (arg_type_is_refcounted(fn->arg3_type))
+		count++;
+	if (arg_type_is_refcounted(fn->arg4_type))
+		count++;
+	if (arg_type_is_refcounted(fn->arg5_type))
+		count++;
+
+	/* We only support one arg being unreferenced at the moment,
+	 * which is sufficient for the helper functions we have
+	 * right now.
+	 */
+	return count <= 1;
+}
+
 static bool check_args_pair_invalid(enum bpf_arg_type arg_curr,
 				    enum bpf_arg_type arg_next)
 {
@@ -2222,7 +2317,8 @@ static bool check_arg_pair_ok(const struct bpf_func_proto *fn)
 static int check_func_proto(const struct bpf_func_proto *fn)
 {
 	return check_raw_mode_ok(fn) &&
-	       check_arg_pair_ok(fn) ? 0 : -EINVAL;
+	       check_arg_pair_ok(fn) &&
+	       check_refcount_ok(fn) ? 0 : -EINVAL;
 }
 
 /* Packet data might have moved, any old PTR_TO_PACKET[_META,_END]
@@ -2253,6 +2349,49 @@ static void clear_all_pkt_pointers(struct bpf_verifier_env *env)
 
 	for (i = 0; i <= vstate->curframe; i++)
 		__clear_all_pkt_pointers(env, vstate->frame[i]);
+}
+
+static void __release_reference_regs(struct bpf_verifier_env *env,
+				     struct bpf_func_state *state, int id)
+{
+	struct bpf_reg_state *regs = state->regs, *reg;
+	int i;
+
+	for (i = 0; i < MAX_BPF_REG; i++)
+		if (regs[i].id == id)
+			mark_reg_unknown(env, regs, i);
+
+	for_each_spilled_reg(i, state, reg) {
+		if (!reg)
+			continue;
+		if (reg_is_refcounted(reg) && reg->id == id)
+			__mark_reg_unknown(reg);
+	}
+}
+
+/* The pointer with the specified id has released its reference to kernel
+ * resources. Identify all copies of the same pointer and clear the reference.
+ */
+static int release_reference_regs(struct bpf_verifier_env *env,
+				  enum bpf_func_id func_id)
+{
+	struct bpf_verifier_state *vstate = env->cur_state;
+	struct bpf_reg_state *regs = cur_regs(env);
+	int i, ptr_id = 0;
+
+	for (i = BPF_REG_1; i < BPF_REG_6; i++) {
+		if (reg_is_refcounted(&regs[i])) {
+			ptr_id = regs[i].id;
+			break;
+		}
+	}
+	if (WARN_ON_ONCE(!ptr_id)) {
+		verbose(env, "verifier internal error: can't locate refcounted arg\n");
+		return -EINVAL;
+	}
+	for (i = 0; i <= vstate->curframe; i++)
+		__release_reference_regs(env, vstate->frame[i], ptr_id);
+	return 0;
 }
 
 static int check_func_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
@@ -2436,6 +2575,15 @@ static int check_helper_call(struct bpf_verifier_env *env, int func_id, int insn
 	 */
 	for (i = 0; i < meta.access_size; i++) {
 		err = check_mem_access(env, insn_idx, meta.regno, i, BPF_B, BPF_WRITE, -1);
+		if (err)
+			return err;
+	}
+
+	/* If the function is a release() function, mark all copies of the same
+	 * pointer as "freed" in all registers and in the stack.
+	 */
+	if (is_release_function(func_id)) {
+		err = release_reference_regs(env, func_id);
 		if (err)
 			return err;
 	}
@@ -3532,11 +3680,13 @@ static void mark_ptr_or_null_reg(struct bpf_reg_state *reg, u32 id,
 		} else if (reg->type == PTR_TO_SOCKET_OR_NULL) {
 			reg->type = PTR_TO_SOCKET;
 		}
-		/* We don't need id from this point onwards anymore, thus we
-		 * should better reset it, so that state pruning has chances
-		 * to take effect.
-		 */
-		reg->id = 0;
+		if (is_null || !reg_is_refcounted(reg)) {
+			/* We don't need id from this point onwards anymore,
+			 * thus we should better reset it, so that state
+			 * pruning has chances to take effect.
+			 */
+			reg->id = 0;
+		}
 	}
 }
 
@@ -4570,6 +4720,113 @@ static int is_state_visited(struct bpf_verifier_env *env, int insn_idx)
 	return 0;
 }
 
+/* Check for remaining references in the current registers and frame. 'safe_id'
+ * indicates a reference id in the cur_regs that should not be checked, which
+ * holds a reference that is safe to leak (for instance, because the callee
+ * intends to return it). 0 is equivalent to "don't allow a leak".
+ */
+static int check_reference_leak_on_exit(struct bpf_verifier_env *env,
+					int safe_id)
+{
+	struct bpf_verifier_state *cur = env->cur_state;
+	struct bpf_func_state *frame = cur->frame[cur->curframe];
+	struct bpf_reg_state *reg;
+	int i;
+
+	for (i = BPF_REG_0; i < MAX_BPF_REG; i++) {
+		reg = &frame->regs[i];
+		if (reg_is_refcounted_or_null(reg) && reg->id != safe_id) {
+			verbose(env, "R%d may hold unreleased reference\n",
+				i);
+			return -EINVAL;
+		}
+	}
+
+	for_each_spilled_reg(i, frame, reg) {
+		if (!reg)
+			continue;
+		if (reg_is_refcounted_or_null(reg) && reg->id != safe_id) {
+			verbose(env, "stack[%d] may hold unreleased reference\n",
+				i);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static bool insn_overwrites_dst_reg(const struct bpf_insn *insn)
+{
+	if (BPF_CLASS(insn->code) != BPF_JMP)
+		return true;
+
+	switch (BPF_OP(insn->code)) {
+	case BPF_JA:
+	case BPF_JEQ:
+	case BPF_JGT :
+	case BPF_JGE :
+	case BPF_JSET:
+	case BPF_JNE:
+	case BPF_JLT:
+	case BPF_JLE:
+	case BPF_JSGT:
+	case BPF_JSGE:
+	case BPF_JSLT:
+	case BPF_JSLE:
+	case BPF_EXIT:
+		return false;
+	default:
+		break;
+	}
+	return true;
+}
+
+/* Registers may hold a reference to a kernel resource. If the destination
+ * register holds a reference that will be overwritten and it is the last
+ * remaining copy of that pointer then executing this instruction would leak
+ * the kernel resource. Disallow this.
+ */
+static int check_reference_leak(struct bpf_verifier_env *env,
+				const struct bpf_insn *insn)
+{
+	struct bpf_reg_state *regs = cur_regs(env);
+	int ret_ptr_id;
+
+	/* Jump instructions such as conditional or unconditional jumps, or
+	 * BPF_EXIT don't overwrite their 'dst_reg', so we allow the dst_reg to
+	 * be a reference type. We handle BPF_EXIT from calls here, but the
+	 * final BPF_EXIT is to be checked through the subsequent later call to
+	 * check_reference_leak_on_exit().
+	 */
+	ret_ptr_id = regs[insn->dst_reg].id;
+	if (!insn_overwrites_dst_reg(insn)) {
+		/* Limitation: at the moment, we only allow returning
+		 * one reference from the current stack/regs:
+		 * ret_ptr_id. If another exists, even if it's stored
+		 * to caller stack, we don't try to figure that out.
+		 */
+		if (BPF_OP(insn->code) == BPF_EXIT)
+			return check_reference_leak_on_exit(env, ret_ptr_id);
+		return 0;
+	}
+
+	/* If the destination reg holds a reference, the program must retain at
+	 * least one equivalent reference somewhere else to ensure that the
+	 * reference is not leaked.
+	 */
+	if (reg_is_refcounted_or_null(&regs[insn->dst_reg]) &&
+	    count_references(env, ret_ptr_id) <= 1) {
+		if (reg_is_refcounted(&regs[insn->dst_reg]))
+			verbose(env, "overwriting last unreleased reference in R%d\n",
+				insn->dst_reg);
+		else
+			verbose(env, "overwriting unchecked reference in R%d\n",
+				insn->dst_reg);
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int do_check(struct bpf_verifier_env *env)
 {
 	struct bpf_verifier_state *state;
@@ -4663,6 +4920,10 @@ static int do_check(struct bpf_verifier_env *env)
 
 		regs = cur_regs(env);
 		env->insn_aux_data[insn_idx].seen = true;
+
+		err = check_reference_leak(env, insn);
+		if (err)
+			return err;
 		if (class == BPF_ALU || class == BPF_ALU64) {
 			err = check_alu_op(env, insn);
 			if (err)
@@ -4830,6 +5091,13 @@ static int do_check(struct bpf_verifier_env *env)
 					do_print_state = true;
 					continue;
 				}
+
+				/* Thou shalt not leak references from the
+				 * final BPF_EXIT instruction.
+				 */
+				err = check_reference_leak_on_exit(env, 0);
+				if (err)
+					return err;
 
 				/* eBPF calling convetion is such that R0 is used
 				 * to return the value from eBPF program.
