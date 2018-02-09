@@ -3,6 +3,7 @@
  *
  * Copyright (c) 2014 PLUMgrid, http://plumgrid.com
  * Copyright (c) 2017 Facebook
+ * Copyright (c) 2018 Covalent IO, Inc. http://covalent.io
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of version 2 of the GNU General Public
@@ -176,6 +177,23 @@ static void bpf_fill_rand_ld_dw(struct bpf_test *self)
 	res ^= (res >> 32);
 	self->retval = (uint32_t)res;
 }
+
+#define BPF_SK_LOOKUP							\
+	/* struct bpf_sock_tuple tuple = {} */				\
+	BPF_MOV64_IMM(BPF_REG_2, 0),					\
+	BPF_STX_MEM(BPF_W, BPF_REG_10, BPF_REG_2, -8),			\
+	BPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_2, -16),		\
+	BPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_2, -24),		\
+	BPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_2, -32),		\
+	BPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_2, -40),		\
+	BPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_2, -48),		\
+	/* sk = sk_lookup_tcp(ctx, &tuple, sizeof tuple, 0, 0) */	\
+	BPF_MOV64_REG(BPF_REG_2, BPF_REG_10),				\
+	BPF_ALU64_IMM(BPF_ADD, BPF_REG_2, -48),				\
+	BPF_MOV64_IMM(BPF_REG_3, 44),					\
+	BPF_MOV64_IMM(BPF_REG_4, 0),					\
+	BPF_MOV64_IMM(BPF_REG_5, 0),					\
+	BPF_EMIT_CALL(BPF_FUNC_sk_lookup_tcp)
 
 static struct bpf_test tests[] = {
 	{
@@ -12442,6 +12460,222 @@ static struct bpf_test tests[] = {
 		.result = ACCEPT,
 	},
 	{
+		"reference tracking: leak potential reference",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_6, BPF_REG_0), /* leak reference */
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "Unreleased reference",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: leak potential reference on stack",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_4, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_4, -8),
+			BPF_STX_MEM(BPF_DW, BPF_REG_4, BPF_REG_0, 0),
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "Unreleased reference",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: leak potential reference on stack 2",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_4, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_4, -8),
+			BPF_STX_MEM(BPF_DW, BPF_REG_4, BPF_REG_0, 0),
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_ST_MEM(BPF_DW, BPF_REG_4, 0, 0),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "Unreleased reference",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: zero potential reference",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_IMM(BPF_REG_0, 0), /* leak reference */
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "Unreleased reference",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: copy and zero potential references",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_7, BPF_REG_0),
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_MOV64_IMM(BPF_REG_7, 0), /* leak reference */
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "Unreleased reference",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: release reference without check",
+		.insns = {
+			BPF_SK_LOOKUP,
+			/* reference in r0 may be NULL */
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "type=sock_or_null expected=sock",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: release reference",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 2),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.result = ACCEPT,
+	},
+	{
+		"reference tracking: release reference 2",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_JMP_IMM(BPF_JNE, BPF_REG_0, 0, 1),
+			BPF_EXIT_INSN(),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.result = ACCEPT,
+	},
+	{
+		"reference tracking: release reference twice",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_MOV64_REG(BPF_REG_6, BPF_REG_0),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 2),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_6),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "type=inv expected=sock",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: release reference twice inside branch",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_MOV64_REG(BPF_REG_6, BPF_REG_0),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 4), /* goto end */
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_6),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "type=inv expected=sock",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: alloc, check, free in one subbranch",
+		.insns = {
+			BPF_LDX_MEM(BPF_W, BPF_REG_2, BPF_REG_1,
+				    offsetof(struct __sk_buff, data)),
+			BPF_LDX_MEM(BPF_W, BPF_REG_3, BPF_REG_1,
+				    offsetof(struct __sk_buff, data_end)),
+			BPF_MOV64_REG(BPF_REG_0, BPF_REG_2),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_0, 16),
+			/* if (offsetof(skb, mark) > data_len) exit; */
+			BPF_JMP_REG(BPF_JLE, BPF_REG_0, BPF_REG_3, 1),
+			BPF_EXIT_INSN(),
+			BPF_LDX_MEM(BPF_W, BPF_REG_6, BPF_REG_2,
+				    offsetof(struct __sk_buff, mark)),
+			BPF_SK_LOOKUP,
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_6, 0, 1), /* mark == 0? */
+			/* Leak reference in R0 */
+			BPF_EXIT_INSN(),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 3), /* sk NULL? */
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "Unreleased reference",
+		.result = REJECT,
+	},
+	{
+		"reference tracking: alloc, check, free in both subbranches",
+		.insns = {
+			BPF_LDX_MEM(BPF_W, BPF_REG_2, BPF_REG_1,
+				    offsetof(struct __sk_buff, data)),
+			BPF_LDX_MEM(BPF_W, BPF_REG_3, BPF_REG_1,
+				    offsetof(struct __sk_buff, data_end)),
+			BPF_MOV64_REG(BPF_REG_0, BPF_REG_2),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_0, 16),
+			/* if (offsetof(skb, mark) > data_len) exit; */
+			BPF_JMP_REG(BPF_JLE, BPF_REG_0, BPF_REG_3, 1),
+			BPF_EXIT_INSN(),
+			BPF_LDX_MEM(BPF_W, BPF_REG_6, BPF_REG_2,
+				    offsetof(struct __sk_buff, mark)),
+			BPF_SK_LOOKUP,
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_6, 0, 5), /* mark == 0? */
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 3), /* sk NULL? */
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 3), /* sk NULL? */
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.result = ACCEPT,
+	},
+	{
+		"reference tracking in call: free reference in subprog",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0), /* unchecked reference */
+			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 1, 0, 2),
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+
+			/* subprog 1 */
+			BPF_MOV64_REG(BPF_REG_2, BPF_REG_1),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_2, 0, 2),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.result = ACCEPT,
+	},
+	{
 		"pass modified ctx pointer to helper, 1",
 		.insns = {
 			BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, -612),
@@ -12506,6 +12740,131 @@ static struct bpf_test tests[] = {
 			// Check bounds are OK
 			BPF_ALU64_REG(BPF_ADD, BPF_REG_1, BPF_REG_2),
 			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.result = ACCEPT,
+	},
+	{
+		"reference tracking in call: free reference in subprog and outside",
+		.insns = {
+			BPF_SK_LOOKUP,
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0), /* unchecked reference */
+			BPF_MOV64_REG(BPF_REG_6, BPF_REG_0),
+			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 1, 0, 3),
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_6),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+
+			/* subprog 1 */
+			BPF_MOV64_REG(BPF_REG_2, BPF_REG_1),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_2, 0, 2),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "type=inv expected=sock",
+		.result = REJECT,
+	},
+	{
+		"reference tracking in call: alloc & leak reference in subprog",
+		.insns = {
+			BPF_MOV64_REG(BPF_REG_4, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_4, -8),
+			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 1, 0, 3),
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+
+			/* subprog 1 */
+			BPF_MOV64_REG(BPF_REG_6, BPF_REG_4),
+			BPF_SK_LOOKUP,
+			/* spill unchecked sk_ptr into stack of caller */
+			BPF_STX_MEM(BPF_DW, BPF_REG_6, BPF_REG_0, 0),
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "Unreleased reference",
+		.result = REJECT,
+	},
+	{
+		"reference tracking in call: alloc in subprog, release outside",
+		.insns = {
+			BPF_MOV64_REG(BPF_REG_4, BPF_REG_10),
+			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 1, 0, 5),
+			BPF_MOV64_REG(BPF_REG_1, BPF_REG_0),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 2),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+
+			/* subprog 1 */
+			BPF_SK_LOOKUP,
+			BPF_EXIT_INSN(), /* return sk */
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.retval = POINTER_VALUE,
+		.result = ACCEPT,
+	},
+	{
+		"reference tracking in call: sk_ptr leak into caller stack",
+		.insns = {
+			BPF_MOV64_REG(BPF_REG_4, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_4, -8),
+			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 1, 0, 2),
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+
+			/* subprog 1 */
+			BPF_MOV64_REG(BPF_REG_5, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_5, -8),
+			BPF_STX_MEM(BPF_DW, BPF_REG_5, BPF_REG_4, 0),
+			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 1, 0, 5),
+			/* spill unchecked sk_ptr into stack of caller */
+			BPF_MOV64_REG(BPF_REG_5, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_5, -8),
+			BPF_LDX_MEM(BPF_DW, BPF_REG_4, BPF_REG_5, 0),
+			BPF_STX_MEM(BPF_DW, BPF_REG_4, BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+
+			/* subprog 2 */
+			BPF_SK_LOOKUP,
+			BPF_EXIT_INSN(),
+		},
+		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+		.errstr = "Unreleased reference",
+		.result = REJECT,
+	},
+	{
+		"reference tracking in call: sk_ptr spill into caller stack",
+		.insns = {
+			BPF_MOV64_REG(BPF_REG_4, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_4, -8),
+			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 1, 0, 2),
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+
+			/* subprog 1 */
+			BPF_MOV64_REG(BPF_REG_5, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_5, -8),
+			BPF_STX_MEM(BPF_DW, BPF_REG_5, BPF_REG_4, 0),
+			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 1, 0, 9),
+			/* spill unchecked sk_ptr into stack of caller */
+			BPF_MOV64_REG(BPF_REG_5, BPF_REG_10),
+			BPF_ALU64_IMM(BPF_ADD, BPF_REG_5, -8),
+			BPF_LDX_MEM(BPF_DW, BPF_REG_4, BPF_REG_5, 0),
+			BPF_STX_MEM(BPF_DW, BPF_REG_4, BPF_REG_0, 0),
+			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 3),
+			/* now the sk_ptr is verified, free the reference */
+			BPF_LDX_MEM(BPF_DW, BPF_REG_1, BPF_REG_4, 0),
+			BPF_MOV64_IMM(BPF_REG_2, 0),
+			BPF_EMIT_CALL(BPF_FUNC_sk_release),
+			BPF_EXIT_INSN(),
+
+			/* subprog 2 */
+			BPF_SK_LOOKUP,
 			BPF_EXIT_INSN(),
 		},
 		.prog_type = BPF_PROG_TYPE_SCHED_CLS,
