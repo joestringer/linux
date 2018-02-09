@@ -96,6 +96,14 @@ static int (*bpf_msg_pull_data)(void *ctx, int start, int end, int flags) =
 	(void *) BPF_FUNC_msg_pull_data;
 static int (*bpf_bind)(void *ctx, void *addr, int addr_len) =
 	(void *) BPF_FUNC_bind;
+static struct bpf_sock_ops *(*bpf_sk_lookup)(void *ctx,
+					     struct bpf_sock_tuple *tuple,
+					     int size, unsigned int netns_id,
+					     unsigned long long flags) =
+	(void *) BPF_FUNC_sk_lookup;
+static int (*bpf_sk_release)(struct bpf_sock_ops *sk,
+			     unsigned long long flags) =
+	(void *) BPF_FUNC_sk_release;
 
 /* llvm builtin functions that eBPF C program may use to
  * emit BPF_LD_ABS and BPF_LD_IND instructions

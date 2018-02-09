@@ -755,6 +755,22 @@ union bpf_attr {
  *     @addr: pointer to struct sockaddr to bind socket to
  *     @addr_len: length of sockaddr structure
  *     Return: 0 on success or negative error code
+ *
+ * struct bpf_sock_ops *bpf_sk_lookup(ctx, tuple, tuple_size, netns, flags)
+ *     Look for socket matching 'tuple'. The return value must be checked,
+ *     and if non-NULL, released via bpf_sk_release().
+ *     @ctx: pointer to ctx
+ *     @tuple: pointer to struct bpf_sock_tuple
+ *     @tuple_size: size of the tuple
+ *     @flags: flags value
+ *     Return: pointer to socket ops on success or NULL
+ *
+ * int bpf_sk_release(sock, flags)
+ *     Release the reference held by 'sock'.
+ *     @sock: Pointer reference to release. Must be found via bpf_sk_lookup().
+ *     @flags: flags value
+ *
+ *     Return: 0 on success or negative error code
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -821,7 +837,9 @@ union bpf_attr {
 	FN(msg_apply_bytes),		\
 	FN(msg_cork_bytes),		\
 	FN(msg_pull_data),		\
-	FN(bind),
+	FN(bind),			\
+	FN(sk_lookup),			\
+	FN(sk_release),
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
  * function eBPF program intends to call
@@ -864,6 +882,7 @@ enum bpf_func_id {
 /* BPF_FUNC_skb_set_tunnel_key flags. */
 #define BPF_F_ZERO_CSUM_TX		(1ULL << 1)
 #define BPF_F_DONT_FRAGMENT		(1ULL << 2)
+#define BPF_F_SEQ_NUMBER		(1ULL << 3)
 
 /* BPF_FUNC_perf_event_output, BPF_FUNC_perf_event_read and
  * BPF_FUNC_perf_event_read_value flags.
@@ -958,6 +977,22 @@ struct bpf_sock {
 	__u32 src_port;		/* Allows 4-byte read.
 				 * Stored in host byte order
 				 */
+};
+
+struct bpf_sock_tuple {
+	union {
+		__be32 ipv6[4];
+		__be32 ipv4;
+	} saddr;
+	union {
+		__be32 ipv6[4];
+		__be32 ipv4;
+	} daddr;
+	__be16 sport;
+	__be16 dport;
+	__u32 dst_if;
+	__u8 family;
+	__u8 proto;
 };
 
 #define XDP_PACKET_HEADROOM 256
