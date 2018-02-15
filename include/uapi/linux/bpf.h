@@ -902,6 +902,7 @@ struct bpf_sock {
 	__u32 protocol;
 	__u32 mark;
 	__u32 priority;
+	__u32 state;
 };
 
 struct bpf_sock_tuple {
