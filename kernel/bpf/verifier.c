@@ -384,12 +384,6 @@ static void print_verifier_state(struct bpf_verifier_env *env,
 			verbose(env, ")");
 		}
 	}
-	if (state->acquired_refs) {
-		verbose(env, " refs=%d", state->refs[0].id);
-		for (i = 1; i < state->acquired_refs; i++) {
-			verbose(env, ",%d", state->refs[i].id);
-		}
-	}
 	for (i = 0; i < state->allocated_stack / BPF_REG_SIZE; i++) {
 		if (state->stack[i].slot_type[0] == STACK_SPILL) {
 			verbose(env, " fp%d",
@@ -400,6 +394,12 @@ static void print_verifier_state(struct bpf_verifier_env *env,
 		}
 		if (state->stack[i].slot_type[0] == STACK_ZERO)
 			verbose(env, " fp%d=0", (-i - 1) * BPF_REG_SIZE);
+	}
+	if (state->acquired_refs && state->refs[0].id) {
+		verbose(env, " refs=%d", state->refs[0].id);
+		for (i = 1; i < state->acquired_refs; i++)
+			if (state->refs[i].id)
+				verbose(env, ",%d", state->refs[i].id);
 	}
 	verbose(env, "\n");
 }
@@ -434,9 +434,9 @@ static int realloc_##NAME##_state(struct bpf_func_state *state, int size, \
 	int slot = size / SIZE;						\
 									\
 	if (size <= old_size || !size) {				\
+		state->COUNT = slot * SIZE;				\
 		if (copy_old)						\
 			return 0;					\
-		state->COUNT = slot * SIZE;				\
 		if (!size && old_size) {				\
 			kfree(state->FIELD);				\
 			state->FIELD = NULL;				\
@@ -489,17 +489,17 @@ static int realloc_func_state(struct bpf_func_state *state, int stack_size,
 static int acquire_reference_state(struct bpf_verifier_env *env, int insn_idx)
 {
 	struct bpf_func_state *state = cur_func(env);
-	int new_ofs = state->acquired_refs + 1;
-	int err;
+	int new_ofs = state->acquired_refs;
+	int id, err;
 
-	err = realloc_func_state(state, state->allocated_stack, new_ofs, true);
+	err = realloc_reference_state(state, state->acquired_refs + 1, true);
 	if (err)
 		return err;
-
-	state->refs[new_ofs].id = ++env->id_gen;
+	id = ++env->id_gen;
+	state->refs[new_ofs].id = id;
 	state->refs[new_ofs].insn_idx = insn_idx;
 
-	return 0;
+	return id;
 }
 
 /* release function corresponding to acquire_reference_state(). Idempotent. */
@@ -513,12 +513,10 @@ static int __release_reference_state(struct bpf_func_state *state, int ptr_id)
 	last_idx = state->acquired_refs - 1;
 	for (i = 0; i < state->acquired_refs; i++) {
 		if (state->refs[i].id == ptr_id) {
-			if (last_idx)
+			if (last_idx && i != last_idx)
 				memcpy(&state->refs[i], &state->refs[last_idx],
 				       sizeof(*state->refs));
-			memset(&state->refs[last_idx], 0, sizeof(*state->refs));
-			state->acquired_refs--;
-			return 0;
+			return realloc_reference_state(state, last_idx, false);
 		}
 	}
 	return -EFAULT;

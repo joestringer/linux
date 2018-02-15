@@ -4979,6 +4979,11 @@ u32 bpf_sock_convert_ctx_access(enum bpf_access_type type,
 						    skc_num),
 				       target_size));
 		break;
+
+	case offsetof(struct bpf_sock, state):
+		*insn++ = BPF_LDX_MEM(BPF_W, si->dst_reg, si->src_reg,
+				      offsetof(struct sock, sk_state));
+		break;
 	}
 
 	return insn - insn_buf;

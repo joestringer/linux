@@ -977,6 +977,7 @@ struct bpf_sock {
 	__u32 src_port;		/* Allows 4-byte read.
 				 * Stored in host byte order
 				 */
+	__u32 state;
 };
 
 struct bpf_sock_tuple {
