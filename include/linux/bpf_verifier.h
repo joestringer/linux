@@ -104,6 +104,11 @@ struct bpf_stack_state {
 	u8 slot_type[BPF_REG_SIZE];
 };
 
+struct bpf_reference_state {
+	int id;
+	int insn_idx; /* allocation insn */
+};
+
 /* state of the program:
  * type of all registers and stack info
  */
@@ -122,7 +127,9 @@ struct bpf_func_state {
 	 */
 	u32 subprogno;
 
-	/* should be second to last. See copy_func_state() */
+	/* The following fields should be last. See copy_func_state() */
+	int acquired_refs;
+	struct bpf_reference_state *refs;
 	int allocated_stack;
 	struct bpf_stack_state *stack;
 };
@@ -215,11 +222,16 @@ void bpf_verifier_vlog(struct bpf_verifier_log *log, const char *fmt,
 __printf(2, 3) void bpf_verifier_log_write(struct bpf_verifier_env *env,
 					   const char *fmt, ...);
 
-static inline struct bpf_reg_state *cur_regs(struct bpf_verifier_env *env)
+static inline struct bpf_func_state *cur_func(struct bpf_verifier_env *env)
 {
 	struct bpf_verifier_state *cur = env->cur_state;
 
-	return cur->frame[cur->curframe]->regs;
+	return cur->frame[cur->curframe];
+}
+
+static inline struct bpf_reg_state *cur_regs(struct bpf_verifier_env *env)
+{
+	return cur_func(env)->regs;
 }
 
 int bpf_prog_offload_verifier_prep(struct bpf_verifier_env *env);
