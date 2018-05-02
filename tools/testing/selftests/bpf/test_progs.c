@@ -1409,6 +1409,43 @@ close_prog_noerr:
 	bpf_object__close(obj);
 }
 
+static void test_reference_tracking()
+{
+	const char *file = "./test_sk_lookup_kern.o";
+	struct bpf_object *obj;
+	struct bpf_program *prog;
+	__u32 duration;
+	int err = 0;
+
+	obj = bpf_object__open(file);
+	if (IS_ERR(obj)) {
+		error_cnt++;
+		return;
+	}
+
+	bpf_object__for_each_program(prog, obj) {
+		const char *title;
+
+		/* Ignore .text sections */
+		title = bpf_program__title(prog, false);
+		if (strstr(title, ".text") != NULL)
+			continue;
+
+		bpf_program__set_type(prog, BPF_PROG_TYPE_SCHED_CLS);
+
+		/* Expect verifier failure if test name has 'fail' */
+		if (strstr(title, "fail") != NULL) {
+			libbpf_set_print(NULL, NULL, NULL);
+			err = !bpf_program__load(prog, "GPL", 0);
+			libbpf_set_print(printf, printf, NULL);
+		} else {
+			err = bpf_program__load(prog, "GPL", 0);
+		}
+		CHECK(err, title, "\n");
+	}
+	bpf_object__close(obj);
+}
+
 int main(void)
 {
 	jit_enabled = is_jit_enabled();
@@ -1427,6 +1464,7 @@ int main(void)
 	test_stacktrace_build_id();
 	test_stacktrace_map_raw_tp();
 	test_get_stack_raw_tp();
+	test_reference_tracking();
 
 	printf("Summary: %d PASSED, %d FAILED\n", pass_cnt, error_cnt);
 	return error_cnt ? EXIT_FAILURE : EXIT_SUCCESS;
