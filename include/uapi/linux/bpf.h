@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
-/* Copyright (c) 2011-2014 PLUMgrid, http://plumgrid.com
+/* Copyright (c) 2011-2019 PLUMgrid, http://plumgrid.com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of version 2 of the GNU General Public
@@ -2726,6 +2726,7 @@ union bpf_attr {
  *
  *		**-EPROTONOSUPPORT** IP packet version is not 4 or 6
  *
+ *
  * int bpf_skb_output(void *ctx, struct bpf_map *map, u64 flags, void *data, u64 size)
  * 	Description
  * 		Write raw *data* blob into a special BPF perf event held by
@@ -2815,6 +2816,21 @@ union bpf_attr {
  * 	Return
  * 		On success, the strictly positive length of the string,	including
  * 		the trailing NUL character. On error, a negative value.
+ *
+ * int bpf_sk_assign(struct sk_buff *skb, struct bpf_sock *sk, u64 flags)
+ *	Description
+ *		Assign the *sk* to the *skb*.
+ *
+ *		If the *flags* argument includes the flag **BPF_F_TPROXY**,
+ *		then this will check that the transparent option is configured
+ *		on the socket and attempt to assign the socket to the skb.
+ *
+ *		The *flags* argument must have **BPF_F_TPROXY** set.
+ *	Return
+ *		0 on success, or a negative errno in case of failure.
+ *		* **-EOPNOTSUPP**:	Unsupported *flags* were specified.
+ *		* **-ESOCKTNOSUPPORT**:	Socket is not a transparent socket.
+ *		* **-EINVAL**		The socket cannot be assigned.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -2932,7 +2948,8 @@ union bpf_attr {
 	FN(probe_read_user),		\
 	FN(probe_read_kernel),		\
 	FN(probe_read_user_str),	\
-	FN(probe_read_kernel_str),
+	FN(probe_read_kernel_str),	\
+	FN(sk_assign),
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
  * function eBPF program intends to call
@@ -3010,6 +3027,9 @@ enum bpf_func_id {
 
 /* BPF_FUNC_sk_storage_get flags */
 #define BPF_SK_STORAGE_GET_F_CREATE	(1ULL << 0)
+
+/* BPF_FUNC_sk_assign flags. */
+#define BPF_F_TPROXY			(1ULL << 0)
 
 /* Mode for BPF_FUNC_skb_adjust_room helper. */
 enum bpf_adj_room_mode {
