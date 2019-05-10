@@ -2727,16 +2727,16 @@ union bpf_attr {
  *	Description
  *		Assign the *sk* to the *skb*.
  *
- *		If the *flags* argument includes the flag **BPF_F_TPROXY**,
- *		then this will check that the transparent option is configured
- *		on the socket and attempt to assign the socket to the skb.
+ *		This operation is only valid from TC ingress path.
  *
- *		The *flags* argument must have **BPF_F_TPROXY** set.
+ *		The *flags* argument must be zero.
  *	Return
  *		0 on success, or a negative errno in case of failure.
- *		* **-EOPNOTSUPP**:	Unsupported *flags* were specified.
- *		* **-ESOCKTNOSUPPORT**:	Socket is not a transparent socket.
- *		* **-EINVAL**		The socket cannot be assigned.
+ *
+ *		* **-EINVAL**		Unsupported flags specified.
+ *		* **-EOPNOTSUPP**:	Unsupported operation, for example a
+ *					call from outside of TC ingress.
+ *		* **-ENOENT**		The socket cannot be assigned.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -2931,9 +2931,6 @@ enum bpf_func_id {
 
 /* BPF_FUNC_sk_storage_get flags */
 #define BPF_SK_STORAGE_GET_F_CREATE	(1ULL << 0)
-
-/* BPF_FUNC_sk_assign flags. */
-#define BPF_F_TPROXY			(1ULL << 0)
 
 /* Mode for BPF_FUNC_skb_adjust_room helper. */
 enum bpf_adj_room_mode {

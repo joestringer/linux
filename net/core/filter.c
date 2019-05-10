@@ -4911,15 +4911,13 @@ static const struct bpf_func_proto bpf_skb_fib_lookup_proto = {
 
 BPF_CALL_3(bpf_sk_assign, struct sk_buff *, skb, struct sock *, sk, u64, flags)
 {
-	/* TODO: How to handle TIME_WAIT sockets? */
-
-	if (flags != BPF_F_TPROXY || !skb_at_tc_ingress(skb))
-		return -EOPNOTSUPP;
-	if (!inet_sk_transparent(sk))
-		return -ESOCKTNOSUPPORT;
-
-	if (unlikely(!refcount_inc_not_zero(&sk->sk_refcnt)))
+	if (flags != 0)
 		return -EINVAL;
+	if (!skb_at_tc_ingress(skb))
+		return -EOPNOTSUPP;
+	if (unlikely(!refcount_inc_not_zero(&sk->sk_refcnt)))
+		return -ENOENT;
+
 	skb_orphan(skb);
 	skb->sk = sk;
 	skb->destructor = sock_edemux;
