@@ -2295,8 +2295,17 @@ union bpf_attr {
  *		the netns associated with the *ctx*. *netns* values beyond the
  *		range of 32-bit integers are reserved for future use.
  *
- *		All values for *flags* are reserved for future usage, and must
- *		be left at zero.
+ *		If *flags* are zero, all socket types are looked up: First,
+ *		established sockets, followed by listen sockets. The first
+ *		match is returned. Valid flags are:
+ *
+ *		**BPF_F_SKL_NO_EST**
+ *			Do not look for established sockets.
+ *		**BPF_F_SKL_NO_LISTEN**
+ *			Do not look for listening sockets.
+ *
+ *		All other values for *flags* are reserved for future usage, and
+ *		must be left at zero.
  *
  *		This helper is available only if the kernel was compiled with
  *		**CONFIG_NET** configuration option.
@@ -2332,8 +2341,17 @@ union bpf_attr {
  *		the netns associated with the *ctx*. *netns* values beyond the
  *		range of 32-bit integers are reserved for future use.
  *
- *		All values for *flags* are reserved for future usage, and must
- *		be left at zero.
+ *		If *flags* are zero, all socket types are looked up: First,
+ *		established sockets, followed by listen sockets. The first
+ *		match is returned. Valid flags are:
+ *
+ *		**BPF_F_SKL_NO_EST**
+ *			Do not look for established sockets.
+ *		**BPF_F_SKL_NO_LISTEN**
+ *			Do not look for listening sockets.
+ *
+ *		All other values for *flags* are reserved for future usage, and
+ *		must be left at zero.
  *
  *		This helper is available only if the kernel was compiled with
  *		**CONFIG_NET** configuration option.
@@ -2892,6 +2910,10 @@ enum bpf_func_id {
 
 /* BPF_FUNC_skb_adjust_room flags. */
 #define BPF_F_ADJ_ROOM_FIXED_GSO	(1ULL << 0)
+
+/* BPF_FUNC_sk*_lookup_* flags. */
+#define BPF_F_SKL_NO_EST		(1ULL << 0)
+#define BPF_F_SKL_NO_LISTEN		(1ULL << 1)
 
 #define BPF_ADJ_ROOM_ENCAP_L2_MASK	0xff
 #define BPF_ADJ_ROOM_ENCAP_L2_SHIFT	56
