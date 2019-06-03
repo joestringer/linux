@@ -5458,6 +5458,7 @@ BPF_CALL_5(FUNC, struct sk_buff *, skb, struct bpf_sock_tuple *, tuple,		\
 }
 DECLARE_SK_LOOKUP_FN(bpf_skc_lookup_tcp, bpf_skc_lookup, IPPROTO_TCP)
 DECLARE_SK_LOOKUP_FN(bpf_sk_lookup_tcp, bpf_sk_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_skc_lookup_udp, bpf_skc_lookup, IPPROTO_UDP)
 DECLARE_SK_LOOKUP_FN(bpf_sk_lookup_udp, bpf_sk_lookup, IPPROTO_UDP)
 #undef DECLARE_SK_LOOKUP_FN
 
@@ -5487,6 +5488,7 @@ BPF_CALL_5(FUNC, struct xdp_buff *, ctx, struct bpf_sock_tuple *, tuple,\
 }
 DECLARE_SK_LOOKUP_FN(bpf_xdp_skc_lookup_tcp, bpf_skc_lookup, IPPROTO_TCP)
 DECLARE_SK_LOOKUP_FN(bpf_xdp_sk_lookup_tcp, bpf_sk_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_xdp_skc_lookup_udp, bpf_skc_lookup, IPPROTO_UDP)
 DECLARE_SK_LOOKUP_FN(bpf_xdp_sk_lookup_udp, bpf_sk_lookup, IPPROTO_UDP)
 #undef DECLARE_SK_LOOKUP_FN
 
@@ -5501,6 +5503,7 @@ BPF_CALL_5(FUNC, struct bpf_sock_addr_kern *, ctx,			\
 }
 DECLARE_SK_LOOKUP_FN(bpf_sock_addr_skc_lookup_tcp, bpf_skc_lookup, IPPROTO_TCP)
 DECLARE_SK_LOOKUP_FN(bpf_sock_addr_sk_lookup_tcp, bpf_sk_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_sock_addr_skc_lookup_udp, bpf_skc_lookup, IPPROTO_UDP)
 DECLARE_SK_LOOKUP_FN(bpf_sock_addr_sk_lookup_udp, bpf_sk_lookup, IPPROTO_UDP)
 #undef DECLARE_SK_LOOKUP_FN
 
@@ -5533,8 +5536,11 @@ DECLARE_SKF_LOOKUP_PROTO(bpf_sock_addr_sk_lookup_udp)
 #define DECLARE_SKC_LOOKUP_PROTO(FUNC) \
 	DECLARE_SKX_LOOKUP_PROTO(FUNC, RET_PTR_TO_SOCK_COMMON_OR_NULL)
 DECLARE_SKC_LOOKUP_PROTO(bpf_skc_lookup_tcp)
+DECLARE_SKC_LOOKUP_PROTO(bpf_skc_lookup_udp)
 DECLARE_SKC_LOOKUP_PROTO(bpf_xdp_skc_lookup_tcp)
+DECLARE_SKC_LOOKUP_PROTO(bpf_xdp_skc_lookup_udp)
 DECLARE_SKC_LOOKUP_PROTO(bpf_sock_addr_skc_lookup_tcp)
+DECLARE_SKC_LOOKUP_PROTO(bpf_sock_addr_skc_lookup_udp)
 #undef DECLARE_SKC_LOOKUP_PROTO
 #undef DECLARE_SKX_LOOKUP_PROTO
 
@@ -5887,6 +5893,8 @@ sock_addr_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sk_release_proto;
 	case BPF_FUNC_skc_lookup_tcp:
 		return &bpf_sock_addr_skc_lookup_tcp_proto;
+	case BPF_FUNC_skc_lookup_udp:
+		return &bpf_sock_addr_skc_lookup_udp_proto;
 #endif /* CONFIG_INET */
 	case BPF_FUNC_sk_storage_get:
 		return &bpf_sk_storage_get_proto;
@@ -6041,6 +6049,8 @@ tc_cls_act_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_get_listener_sock_proto;
 	case BPF_FUNC_skc_lookup_tcp:
 		return &bpf_skc_lookup_tcp_proto;
+	case BPF_FUNC_skc_lookup_udp:
+		return &bpf_skc_lookup_udp_proto;
 	case BPF_FUNC_tcp_check_syncookie:
 		return &bpf_tcp_check_syncookie_proto;
 	case BPF_FUNC_skb_ecn_set_ce:
@@ -6084,6 +6094,8 @@ xdp_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sk_release_proto;
 	case BPF_FUNC_skc_lookup_tcp:
 		return &bpf_xdp_skc_lookup_tcp_proto;
+	case BPF_FUNC_skc_lookup_udp:
+		return &bpf_xdp_skc_lookup_udp_proto;
 	case BPF_FUNC_tcp_check_syncookie:
 		return &bpf_tcp_check_syncookie_proto;
 #endif
@@ -6188,6 +6200,8 @@ sk_skb_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sk_release_proto;
 	case BPF_FUNC_skc_lookup_tcp:
 		return &bpf_skc_lookup_tcp_proto;
+	case BPF_FUNC_skc_lookup_udp:
+		return &bpf_skc_lookup_udp_proto;
 #endif
 	default:
 		return bpf_base_func_proto(func_id);
