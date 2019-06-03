@@ -2336,8 +2336,17 @@ union bpf_attr {
  *		the netns associated with the *ctx*. *netns* values beyond the
  *		range of 32-bit integers are reserved for future use.
  *
- *		All values for *flags* are reserved for future usage, and must
- *		be left at zero.
+ *		If *flags* are zero, all socket types are looked up: First,
+ *		established sockets, followed by listen sockets. The first
+ *		match is returned. Valid flags are:
+ *
+ *		**BPF_F_SKL_NO_EST**
+ *			Do not look for established sockets.
+ *		**BPF_F_SKL_NO_LISTEN**
+ *			Do not look for listening sockets.
+ *
+ *		All other values for *flags* are reserved for future usage, and
+ *		must be left at zero.
  *
  *		This helper is available only if the kernel was compiled with
  *		**CONFIG_NET** configuration option.
@@ -2373,8 +2382,17 @@ union bpf_attr {
  *		the netns associated with the *ctx*. *netns* values beyond the
  *		range of 32-bit integers are reserved for future use.
  *
- *		All values for *flags* are reserved for future usage, and must
- *		be left at zero.
+ *		If *flags* are zero, all socket types are looked up: First,
+ *		established sockets, followed by listen sockets. The first
+ *		match is returned. Valid flags are:
+ *
+ *		**BPF_F_SKL_NO_EST**
+ *			Do not look for established sockets.
+ *		**BPF_F_SKL_NO_LISTEN**
+ *			Do not look for listening sockets.
+ *
+ *		All other values for *flags* are reserved for future usage, and
+ *		must be left at zero.
  *
  *		This helper is available only if the kernel was compiled with
  *		**CONFIG_NET** configuration option.
@@ -2909,6 +2927,21 @@ union bpf_attr {
  *		of sizeof(struct perf_branch_entry).
  *
  *		**-ENOENT** if architecture does not support branch records.
+ *
+ * int bpf_sk_assign(struct sk_buff *skb, struct bpf_sock *sk, u64 flags)
+ *	Description
+ *		Assign the *sk* to the *skb*.
+ *
+ *		This operation is only valid from TC ingress path.
+ *
+ *		The *flags* argument must be zero.
+ *	Return
+ *		0 on success, or a negative errno in case of failure.
+ *
+ *		* **-EINVAL**		Unsupported flags specified.
+ *		* **-EOPNOTSUPP**:	Unsupported operation, for example a
+ *					call from outside of TC ingress.
+ *		* **-ENOENT**		The socket cannot be assigned.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3030,7 +3063,8 @@ union bpf_attr {
 	FN(tcp_send_ack),		\
 	FN(send_signal_thread),		\
 	FN(jiffies64),			\
-	FN(read_branch_records),
+	FN(read_branch_records),	\
+	FN(sk_assign),
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
  * function eBPF program intends to call
@@ -3092,6 +3126,10 @@ enum bpf_func_id {
 /* BPF_FUNC_skb_adjust_room flags. */
 #define BPF_F_ADJ_ROOM_FIXED_GSO	(1ULL << 0)
 
+/* BPF_FUNC_sk*_lookup_* flags. */
+#define BPF_F_SKL_NO_EST		(1ULL << 0)
+#define BPF_F_SKL_NO_LISTEN		(1ULL << 1)
+
 #define BPF_ADJ_ROOM_ENCAP_L2_MASK	0xff
 #define BPF_ADJ_ROOM_ENCAP_L2_SHIFT	56
 
@@ -3111,6 +3149,9 @@ enum bpf_func_id {
 
 /* BPF_FUNC_read_branch_records flags. */
 #define BPF_F_GET_BRANCH_RECORDS_SIZE	(1ULL << 0)
+
+/* BPF_FUNC_sk_assign flags. */
+#define BPF_F_TPROXY			(1ULL << 0)
 
 /* Mode for BPF_FUNC_skb_adjust_room helper. */
 enum bpf_adj_room_mode {
