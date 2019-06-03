@@ -2746,8 +2746,7 @@ union bpf_attr {
  *
  *		This function is identical to **bpf_sk_lookup_udp**\ (), except
  *		that it also returns timewait or request sockets. Use
- *		**bpf_sk_fullsock**\ () or **bpf_udp_sock**\ () to access the
- *		full structure.
+ *		**bpf_sk_fullsock**\ () to access the full structure.
  *
  *		This helper is available only if the kernel was compiled with
  *		**CONFIG_NET** configuration option.

@@ -177,6 +177,11 @@ static struct bpf_sock *(*bpf_sk_lookup_udp)(void *ctx,
 					     int size, unsigned long long netns_id,
 					     unsigned long long flags) =
 	(void *) BPF_FUNC_sk_lookup_udp;
+static struct bpf_sock *(*bpf_skc_lookup_udp)(void *ctx,
+					     struct bpf_sock_tuple *tuple,
+					     int size, unsigned long long netns_id,
+					     unsigned long long flags) =
+	(void *) BPF_FUNC_skc_lookup_udp;
 static int (*bpf_sk_release)(struct bpf_sock *sk) =
 	(void *) BPF_FUNC_sk_release;
 static int (*bpf_skb_vlan_push)(void *ctx, __be16 vlan_proto, __u16 vlan_tci) =
