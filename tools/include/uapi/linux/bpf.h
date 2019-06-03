@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
-/* Copyright (c) 2011-2014 PLUMgrid, http://plumgrid.com
+/* Copyright (c) 2011-2020 PLUMgrid, http://plumgrid.com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of version 2 of the GNU General Public
@@ -2942,6 +2942,25 @@ union bpf_attr {
  *		* **-EOPNOTSUPP**:	Unsupported operation, for example a
  *					call from outside of TC ingress.
  *		* **-ENOENT**		The socket cannot be assigned.
+ *
+ * struct bpf_sock *bpf_skc_lookup_udp(void *ctx, struct bpf_sock_tuple *tuple, u32 tuple_size, u64 netns, u64 flags)
+ *	Description
+ *		Look for UDP socket matching *tuple*, optionally in a child
+ *		network namespace *netns*. The return value must be checked,
+ *		and if non-**NULL**, released via **bpf_sk_release**\ ().
+ *
+ *		This function is identical to **bpf_sk_lookup_udp**\ (), except
+ *		that it also returns timewait or request sockets. Use
+ *		**bpf_sk_fullsock**\ () to access the full structure.
+ *
+ *		This helper is available only if the kernel was compiled with
+ *		**CONFIG_NET** configuration option.
+ *	Return
+ *		Pointer to **struct bpf_sock**, or **NULL** in case of failure.
+ *		For sockets with reuseport option, the **struct bpf_sock**
+ *		result is from *reuse*\ **->socks**\ [] using the hash of the
+ *		tuple.
+ *
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3064,6 +3083,7 @@ union bpf_attr {
 	FN(send_signal_thread),		\
 	FN(jiffies64),			\
 	FN(read_branch_records),	\
+	FN(skc_lookup_udp),		\
 	FN(sk_assign),
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
