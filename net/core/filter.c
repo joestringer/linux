@@ -15,6 +15,7 @@
  *
  * Andi Kleen - Fix a few bad bugs and races.
  * Kris Katterjohn - Added many additional checks in bpf_check_classic()
+ * Joe Stringer - Socket lookup and assign
  */
 
 #include <linux/module.h>
@@ -5200,7 +5201,7 @@ static struct sock *sk_lookup(struct net *net, struct bpf_sock_tuple *tuple,
  * callers to satisfy BPF_CALL declarations.
  */
 static struct sock *
-__bpf_skc_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
+bpf_skc_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
 		 struct net *caller_net, u32 ifindex, u8 proto, u64 netns_id,
 		 u64 flags)
 {
@@ -5241,12 +5242,12 @@ out:
 }
 
 static struct sock *
-__bpf_sk_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
+bpf_sk_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
 		struct net *caller_net, u32 ifindex, u8 proto, u64 netns_id,
 		u64 flags)
 {
-	struct sock *sk = __bpf_skc_lookup(skb, tuple, len, caller_net,
-					   ifindex, proto, netns_id, flags);
+	struct sock *sk = bpf_skc_lookup(skb, tuple, len, caller_net,
+					 ifindex, proto, netns_id, flags);
 
 	if (sk) {
 		sk = sk_to_full_sk(sk);
@@ -5259,99 +5260,91 @@ __bpf_sk_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
 	return sk;
 }
 
-static struct sock *
-bpf_skc_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
-	       u8 proto, u64 netns_id, u64 flags)
-{
-	struct net *caller_net;
-	int ifindex;
-
-	if (skb->dev) {
-		caller_net = dev_net(skb->dev);
-		ifindex = skb->dev->ifindex;
-	} else {
-		caller_net = sock_net(skb->sk);
-		ifindex = 0;
-	}
-
-	return __bpf_skc_lookup(skb, tuple, len, caller_net, ifindex, proto,
-				netns_id, flags);
+#define DECLARE_SK_LOOKUP_FN(FUNC, CALLEE, PROTO)				\
+BPF_CALL_5(FUNC, struct sk_buff *, skb, struct bpf_sock_tuple *, tuple,		\
+	   u32, len, u64, netns_id, u64, flags)					\
+{										\
+	struct net *caller_net;							\
+	int ifindex;								\
+										\
+	if (skb->dev) {								\
+		caller_net = dev_net(skb->dev);					\
+		ifindex = skb->dev->ifindex;					\
+	} else {								\
+		caller_net = sock_net(skb->sk);					\
+		ifindex = 0;							\
+	}									\
+										\
+	return (unsigned long)CALLEE(skb, tuple, len, caller_net, ifindex,	\
+				     PROTO, netns_id, flags);			\
 }
+DECLARE_SK_LOOKUP_FN(bpf_skc_lookup_tcp, bpf_skc_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_sk_lookup_tcp, bpf_sk_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_sk_lookup_udp, bpf_sk_lookup, IPPROTO_UDP)
+#undef DECLARE_SK_LOOKUP_FN
 
-static struct sock *
-bpf_sk_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
-	      u8 proto, u64 netns_id, u64 flags)
-{
-	struct sock *sk = bpf_skc_lookup(skb, tuple, len, proto, netns_id,
-					 flags);
-
-	if (sk) {
-		sk = sk_to_full_sk(sk);
-		if (!sk_fullsock(sk)) {
-			sock_gen_put(sk);
-			return NULL;
-		}
-	}
-
-	return sk;
+#define DECLARE_SK_LOOKUP_FN(FUNC, CALLEE, PROTO)			\
+BPF_CALL_5(FUNC, struct xdp_buff *, ctx, struct bpf_sock_tuple *, tuple,\
+	   u32, len, u32, netns_id, u64, flags)				\
+{									\
+	struct net *caller_net = dev_net(ctx->rxq->dev);		\
+	int ifindex = ctx->rxq->dev->ifindex;				\
+									\
+	return (unsigned long)CALLEE(NULL, tuple, len, caller_net,	\
+				     ifindex, PROTO, netns_id, flags);	\
 }
+DECLARE_SK_LOOKUP_FN(bpf_xdp_skc_lookup_tcp, bpf_skc_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_xdp_sk_lookup_tcp, bpf_sk_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_xdp_sk_lookup_udp, bpf_sk_lookup, IPPROTO_UDP)
+#undef DECLARE_SK_LOOKUP_FN
 
-BPF_CALL_5(bpf_skc_lookup_tcp, struct sk_buff *, skb,
-	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
-{
-	return (unsigned long)bpf_skc_lookup(skb, tuple, len, IPPROTO_TCP,
-					     netns_id, flags);
+#define DECLARE_SK_LOOKUP_FN(FUNC, CALLEE, PROTO)			\
+BPF_CALL_5(FUNC, struct bpf_sock_addr_kern *, ctx,			\
+	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id,	\
+	   u64, flags)							\
+{									\
+	struct net *caller_net = sock_net(ctx->sk);			\
+	return (unsigned long)CALLEE(NULL, tuple, len, caller_net, 0,	\
+				     PROTO, netns_id, flags);		\
 }
+DECLARE_SK_LOOKUP_FN(bpf_sock_addr_skc_lookup_tcp, bpf_skc_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_sock_addr_sk_lookup_tcp, bpf_sk_lookup, IPPROTO_TCP)
+DECLARE_SK_LOOKUP_FN(bpf_sock_addr_sk_lookup_udp, bpf_sk_lookup, IPPROTO_UDP)
+#undef DECLARE_SK_LOOKUP_FN
 
-static const struct bpf_func_proto bpf_skc_lookup_tcp_proto = {
-	.func		= bpf_skc_lookup_tcp,
-	.gpl_only	= false,
-	.pkt_access	= true,
-	.ret_type	= RET_PTR_TO_SOCK_COMMON_OR_NULL,
-	.arg1_type	= ARG_PTR_TO_CTX,
-	.arg2_type	= ARG_PTR_TO_MEM,
-	.arg3_type	= ARG_CONST_SIZE,
-	.arg4_type	= ARG_ANYTHING,
-	.arg5_type	= ARG_ANYTHING,
+/* There are various socket lookup functions, varying by whether they return
+ * a full sock (*_sk_lookup_*) or sock_common (*_skc_lookup_*), and by protocol
+ * (*_tcp, *_udp). The only differentiating factors are return type and name,
+ * so define the API for these programmatically via the macro below.
+ */
+#define DECLARE_SKX_LOOKUP_PROTO(FUNC, RET_TYPE)		\
+static const struct bpf_func_proto FUNC##_proto = {	\
+	.func           = FUNC,					\
+	.gpl_only       = false,				\
+	.pkt_access     = true,					\
+	.ret_type       = RET_TYPE,				\
+	.arg1_type      = ARG_PTR_TO_CTX,			\
+	.arg2_type      = ARG_PTR_TO_MEM,			\
+	.arg3_type      = ARG_CONST_SIZE,			\
+	.arg4_type      = ARG_ANYTHING,				\
+	.arg5_type      = ARG_ANYTHING,				\
 };
-
-BPF_CALL_5(bpf_sk_lookup_tcp, struct sk_buff *, skb,
-	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
-{
-	return (unsigned long)bpf_sk_lookup(skb, tuple, len, IPPROTO_TCP,
-					    netns_id, flags);
-}
-
-static const struct bpf_func_proto bpf_sk_lookup_tcp_proto = {
-	.func		= bpf_sk_lookup_tcp,
-	.gpl_only	= false,
-	.pkt_access	= true,
-	.ret_type	= RET_PTR_TO_SOCKET_OR_NULL,
-	.arg1_type	= ARG_PTR_TO_CTX,
-	.arg2_type	= ARG_PTR_TO_MEM,
-	.arg3_type	= ARG_CONST_SIZE,
-	.arg4_type	= ARG_ANYTHING,
-	.arg5_type	= ARG_ANYTHING,
-};
-
-BPF_CALL_5(bpf_sk_lookup_udp, struct sk_buff *, skb,
-	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
-{
-	return (unsigned long)bpf_sk_lookup(skb, tuple, len, IPPROTO_UDP,
-					    netns_id, flags);
-}
-
-static const struct bpf_func_proto bpf_sk_lookup_udp_proto = {
-	.func		= bpf_sk_lookup_udp,
-	.gpl_only	= false,
-	.pkt_access	= true,
-	.ret_type	= RET_PTR_TO_SOCKET_OR_NULL,
-	.arg1_type	= ARG_PTR_TO_CTX,
-	.arg2_type	= ARG_PTR_TO_MEM,
-	.arg3_type	= ARG_CONST_SIZE,
-	.arg4_type	= ARG_ANYTHING,
-	.arg5_type	= ARG_ANYTHING,
-};
+#define DECLARE_SKF_LOOKUP_PROTO(FUNC) \
+	DECLARE_SKX_LOOKUP_PROTO(FUNC, RET_PTR_TO_SOCKET_OR_NULL)
+DECLARE_SKF_LOOKUP_PROTO(bpf_sk_lookup_tcp)
+DECLARE_SKF_LOOKUP_PROTO(bpf_sk_lookup_udp)
+DECLARE_SKF_LOOKUP_PROTO(bpf_xdp_sk_lookup_tcp)
+DECLARE_SKF_LOOKUP_PROTO(bpf_xdp_sk_lookup_udp)
+DECLARE_SKF_LOOKUP_PROTO(bpf_sock_addr_sk_lookup_tcp)
+DECLARE_SKF_LOOKUP_PROTO(bpf_sock_addr_sk_lookup_udp)
+#undef DECLARE_SKF_LOOKUP_PROTO
+#define DECLARE_SKC_LOOKUP_PROTO(FUNC) \
+	DECLARE_SKX_LOOKUP_PROTO(FUNC, RET_PTR_TO_SOCK_COMMON_OR_NULL)
+DECLARE_SKC_LOOKUP_PROTO(bpf_skc_lookup_tcp)
+DECLARE_SKC_LOOKUP_PROTO(bpf_xdp_skc_lookup_tcp)
+DECLARE_SKC_LOOKUP_PROTO(bpf_sock_addr_skc_lookup_tcp)
+#undef DECLARE_SKC_LOOKUP_PROTO
+#undef DECLARE_SKX_LOOKUP_PROTO
 
 BPF_CALL_1(bpf_sk_release, struct sock *, sk)
 {
@@ -5366,132 +5359,6 @@ static const struct bpf_func_proto bpf_sk_release_proto = {
 	.gpl_only	= false,
 	.ret_type	= RET_INTEGER,
 	.arg1_type	= ARG_PTR_TO_SOCK_COMMON,
-};
-
-BPF_CALL_5(bpf_xdp_sk_lookup_udp, struct xdp_buff *, ctx,
-	   struct bpf_sock_tuple *, tuple, u32, len, u32, netns_id, u64, flags)
-{
-	struct net *caller_net = dev_net(ctx->rxq->dev);
-	int ifindex = ctx->rxq->dev->ifindex;
-
-	return (unsigned long)__bpf_sk_lookup(NULL, tuple, len, caller_net,
-					      ifindex, IPPROTO_UDP, netns_id,
-					      flags);
-}
-
-static const struct bpf_func_proto bpf_xdp_sk_lookup_udp_proto = {
-	.func           = bpf_xdp_sk_lookup_udp,
-	.gpl_only       = false,
-	.pkt_access     = true,
-	.ret_type       = RET_PTR_TO_SOCKET_OR_NULL,
-	.arg1_type      = ARG_PTR_TO_CTX,
-	.arg2_type      = ARG_PTR_TO_MEM,
-	.arg3_type      = ARG_CONST_SIZE,
-	.arg4_type      = ARG_ANYTHING,
-	.arg5_type      = ARG_ANYTHING,
-};
-
-BPF_CALL_5(bpf_xdp_skc_lookup_tcp, struct xdp_buff *, ctx,
-	   struct bpf_sock_tuple *, tuple, u32, len, u32, netns_id, u64, flags)
-{
-	struct net *caller_net = dev_net(ctx->rxq->dev);
-	int ifindex = ctx->rxq->dev->ifindex;
-
-	return (unsigned long)__bpf_skc_lookup(NULL, tuple, len, caller_net,
-					       ifindex, IPPROTO_TCP, netns_id,
-					       flags);
-}
-
-static const struct bpf_func_proto bpf_xdp_skc_lookup_tcp_proto = {
-	.func           = bpf_xdp_skc_lookup_tcp,
-	.gpl_only       = false,
-	.pkt_access     = true,
-	.ret_type       = RET_PTR_TO_SOCK_COMMON_OR_NULL,
-	.arg1_type      = ARG_PTR_TO_CTX,
-	.arg2_type      = ARG_PTR_TO_MEM,
-	.arg3_type      = ARG_CONST_SIZE,
-	.arg4_type      = ARG_ANYTHING,
-	.arg5_type      = ARG_ANYTHING,
-};
-
-BPF_CALL_5(bpf_xdp_sk_lookup_tcp, struct xdp_buff *, ctx,
-	   struct bpf_sock_tuple *, tuple, u32, len, u32, netns_id, u64, flags)
-{
-	struct net *caller_net = dev_net(ctx->rxq->dev);
-	int ifindex = ctx->rxq->dev->ifindex;
-
-	return (unsigned long)__bpf_sk_lookup(NULL, tuple, len, caller_net,
-					      ifindex, IPPROTO_TCP, netns_id,
-					      flags);
-}
-
-static const struct bpf_func_proto bpf_xdp_sk_lookup_tcp_proto = {
-	.func           = bpf_xdp_sk_lookup_tcp,
-	.gpl_only       = false,
-	.pkt_access     = true,
-	.ret_type       = RET_PTR_TO_SOCKET_OR_NULL,
-	.arg1_type      = ARG_PTR_TO_CTX,
-	.arg2_type      = ARG_PTR_TO_MEM,
-	.arg3_type      = ARG_CONST_SIZE,
-	.arg4_type      = ARG_ANYTHING,
-	.arg5_type      = ARG_ANYTHING,
-};
-
-BPF_CALL_5(bpf_sock_addr_skc_lookup_tcp, struct bpf_sock_addr_kern *, ctx,
-	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
-{
-	return (unsigned long)__bpf_skc_lookup(NULL, tuple, len,
-					       sock_net(ctx->sk), 0,
-					       IPPROTO_TCP, netns_id, flags);
-}
-
-static const struct bpf_func_proto bpf_sock_addr_skc_lookup_tcp_proto = {
-	.func		= bpf_sock_addr_skc_lookup_tcp,
-	.gpl_only	= false,
-	.ret_type	= RET_PTR_TO_SOCK_COMMON_OR_NULL,
-	.arg1_type	= ARG_PTR_TO_CTX,
-	.arg2_type	= ARG_PTR_TO_MEM,
-	.arg3_type	= ARG_CONST_SIZE,
-	.arg4_type	= ARG_ANYTHING,
-	.arg5_type	= ARG_ANYTHING,
-};
-
-BPF_CALL_5(bpf_sock_addr_sk_lookup_tcp, struct bpf_sock_addr_kern *, ctx,
-	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
-{
-	return (unsigned long)__bpf_sk_lookup(NULL, tuple, len,
-					      sock_net(ctx->sk), 0, IPPROTO_TCP,
-					      netns_id, flags);
-}
-
-static const struct bpf_func_proto bpf_sock_addr_sk_lookup_tcp_proto = {
-	.func		= bpf_sock_addr_sk_lookup_tcp,
-	.gpl_only	= false,
-	.ret_type	= RET_PTR_TO_SOCKET_OR_NULL,
-	.arg1_type	= ARG_PTR_TO_CTX,
-	.arg2_type	= ARG_PTR_TO_MEM,
-	.arg3_type	= ARG_CONST_SIZE,
-	.arg4_type	= ARG_ANYTHING,
-	.arg5_type	= ARG_ANYTHING,
-};
-
-BPF_CALL_5(bpf_sock_addr_sk_lookup_udp, struct bpf_sock_addr_kern *, ctx,
-	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
-{
-	return (unsigned long)__bpf_sk_lookup(NULL, tuple, len,
-					      sock_net(ctx->sk), 0, IPPROTO_UDP,
-					      netns_id, flags);
-}
-
-static const struct bpf_func_proto bpf_sock_addr_sk_lookup_udp_proto = {
-	.func		= bpf_sock_addr_sk_lookup_udp,
-	.gpl_only	= false,
-	.ret_type	= RET_PTR_TO_SOCKET_OR_NULL,
-	.arg1_type	= ARG_PTR_TO_CTX,
-	.arg2_type	= ARG_PTR_TO_MEM,
-	.arg3_type	= ARG_CONST_SIZE,
-	.arg4_type	= ARG_ANYTHING,
-	.arg5_type	= ARG_ANYTHING,
 };
 
 bool bpf_tcp_sock_is_valid_access(int off, int size, enum bpf_access_type type,
