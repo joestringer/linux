@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2011-2014 PLUMgrid, http://plumgrid.com
- * Copyright (c) 2016 Facebook
- * Copyright (c) 2018 Covalent IO, Inc. http://covalent.io
+/* Copyright (c) 2011-2019 PLUMgrid, http://plumgrid.com
+ * Copyright (c) 2016-2019 Facebook
+ * Copyright (c) 2018-2019 Covalent IO, Inc. http://covalent.io
  */
 #include <uapi/linux/btf.h>
 #include <linux/kernel.h>
@@ -390,7 +390,8 @@ static bool is_acquire_function(enum bpf_func_id func_id)
 {
 	return func_id == BPF_FUNC_sk_lookup_tcp ||
 		func_id == BPF_FUNC_sk_lookup_udp ||
-		func_id == BPF_FUNC_skc_lookup_tcp;
+		func_id == BPF_FUNC_skc_lookup_tcp ||
+		func_id == BPF_FUNC_skc_lookup_udp;
 }
 
 static bool is_ptr_cast_function(enum bpf_func_id func_id)
