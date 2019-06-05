@@ -28,6 +28,7 @@ test_netcnt
 test_tcpnotify_user
 test_libbpf
 test_tcp_check_syncookie_user
+test_sk_assign
 test_sysctl
 test_hashmap
 test_btf_dump
