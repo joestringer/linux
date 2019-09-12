@@ -4940,6 +4940,14 @@ BPF_CALL_3(bpf_sk_assign, struct sk_buff *, skb, struct sock *, sk, u64, flags)
 	skb_orphan(skb);
 	skb->sk = sk;
 	skb->destructor = sock_edemux;
+	if (sk_fullsock(sk)) {
+		struct dst_entry *dst = READ_ONCE(sk->sk_rx_dst);
+
+		if (dst)
+			dst = dst_check(dst, 0);
+		if (dst)
+			skb_dst_set_noref(skb, dst);
+	}
 
 	return 0;
 }
