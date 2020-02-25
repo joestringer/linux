@@ -9,6 +9,7 @@
 enum metadata_type {
 	METADATA_IP_TUNNEL,
 	METADATA_HW_PORT_MUX,
+	METADATA_SK_PREFETCH,
 };
 
 struct hw_port_info {
@@ -80,6 +81,8 @@ static inline int skb_metadata_dst_cmp(const struct sk_buff *skb_a,
 		return memcmp(&a->u.tun_info, &b->u.tun_info,
 			      sizeof(a->u.tun_info) +
 					 a->u.tun_info.options_len);
+	case METADATA_SK_PREFETCH:
+		return 0;
 	default:
 		return 1;
 	}
@@ -214,4 +217,12 @@ static inline struct metadata_dst *ipv6_tun_rx_dst(struct sk_buff *skb,
 				  0, ip6_flowlabel(ip6h), flags, tunnel_id,
 				  md_size);
 }
+
+extern const struct metadata_dst dst_sk_prefetch;
+
+static inline bool dst_is_sk_prefetch(const struct dst_entry *dst)
+{
+	return dst == &dst_sk_prefetch.dst;
+}
+
 #endif /* __NET_DST_METADATA_H */

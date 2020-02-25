@@ -330,3 +330,16 @@ void metadata_dst_free_percpu(struct metadata_dst __percpu *md_dst)
 	free_percpu(md_dst);
 }
 EXPORT_SYMBOL_GPL(metadata_dst_free_percpu);
+
+const struct metadata_dst dst_sk_prefetch = {
+	.dst = {
+		.ops = &md_dst_ops,
+		.input = dst_md_discard,
+		.output = dst_md_discard_out,
+		.flags = DST_NOCOUNT | DST_METADATA,
+		.obsolete = DST_OBSOLETE_NONE,
+		.__refcnt = ATOMIC_INIT(1),
+	},
+	.type = METADATA_SK_PREFETCH,
+};
+EXPORT_SYMBOL(dst_sk_prefetch);
