@@ -2,6 +2,7 @@
 // Copyright (c) 2018 Facebook
 // Copyright (c) 2019 Cloudflare
 
+#include <signal.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -46,6 +47,13 @@ out:
 	return fd;
 }
 
+static void handle_timeout(int sig)
+{
+	if (sig == SIGALRM)
+		log_err("Timed out while connecting to server");
+	kill(0, SIGKILL);
+}
+
 static int connect_to_server(const struct sockaddr *addr, socklen_t len)
 {
 	int fd = -1;
@@ -55,6 +63,13 @@ static int connect_to_server(const struct sockaddr *addr, socklen_t len)
 		log_err("Failed to create client socket");
 		goto out;
 	}
+
+	if (signal(SIGALRM, handle_timeout) == SIG_ERR) {
+		log_err("Failed to configure timeout signal");
+		goto out;
+	}
+
+	alarm(5);
 
 	if (connect(fd, addr, len) == -1) {
 		log_err("Fail to connect to server");
