@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2018 Facebook
 // Copyright (c) 2019 Cloudflare
+// Copyright (c) 2020 Isovalent. Inc.
 
 #include <string.h>
 #include <stdlib.h>
@@ -16,6 +17,8 @@
 
 #include "bpf_rlimit.h"
 #include "cgroup_helpers.h"
+
+#define TEST_DADDR (0xC0A80203)
 
 static int start_server(const struct sockaddr *addr, socklen_t len)
 {
@@ -160,6 +163,16 @@ int main(int argc, char **argv)
 	/* Connect to unbound ports */
 	addr4.sin_port = htons(4321);
 	addr6.sin6_port = htons(4321);
+
+	if (run_test(server, (const struct sockaddr *)&addr4, sizeof(addr4)))
+		goto out;
+
+	if (run_test(server_v6, (const struct sockaddr *)&addr6, sizeof(addr6)))
+		goto out;
+
+	/* Connect to unbound addresses */
+	addr4.sin_addr.s_addr = htonl(TEST_DADDR);
+	addr6.sin6_addr.s6_addr32[3] = htonl(TEST_DADDR);
 
 	if (run_test(server, (const struct sockaddr *)&addr4, sizeof(addr4)))
 		goto out;
