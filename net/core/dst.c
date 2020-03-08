@@ -330,3 +330,33 @@ void metadata_dst_free_percpu(struct metadata_dst __percpu *md_dst)
 	free_percpu(md_dst);
 }
 EXPORT_SYMBOL_GPL(metadata_dst_free_percpu);
+
+const struct metadata_dst dst_sk_prefetch = {
+	.dst = {
+		.ops = &md_dst_ops,
+		.input = dst_md_discard,
+		.output = dst_md_discard_out,
+		.flags = DST_NOCOUNT | DST_METADATA,
+		.obsolete = DST_OBSOLETE_NONE,
+		.__refcnt = ATOMIC_INIT(1),
+	},
+	.type = METADATA_SK_PREFETCH,
+};
+EXPORT_SYMBOL(dst_sk_prefetch);
+
+DEFINE_PER_CPU(unsigned long, dst_sk_prefetch_dst);
+
+void dst_sk_prefetch_store(struct sk_buff *skb)
+{
+	unsigned long refdst;
+
+	refdst = skb->_skb_refdst;
+	__this_cpu_write(dst_sk_prefetch_dst, refdst);
+	skb_dst_set_noref(skb, (struct dst_entry *)&dst_sk_prefetch.dst);
+}
+
+void dst_sk_prefetch_fetch(struct sk_buff *skb)
+{
+	skb->_skb_refdst = __this_cpu_read(dst_sk_prefetch_dst);
+}
+EXPORT_SYMBOL(dst_sk_prefetch_fetch);
