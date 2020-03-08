@@ -19,4 +19,4 @@ tc qdisc add dev lo clsact
 tc filter add dev lo ingress bpf direct-action object-file ./test_sk_assign.o \
 	section "sk_assign_test"
 
-exec ./test_sk_assign
+exec ./test_sk_assign "$@"
