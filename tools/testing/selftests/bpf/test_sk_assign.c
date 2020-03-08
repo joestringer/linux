@@ -3,6 +3,8 @@
 // Copyright (c) 2019 Cloudflare
 // Copyright (c) 2020 Isovalent. Inc.
 
+#include <fcntl.h>
+#include <signal.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -19,6 +21,14 @@
 #include "cgroup_helpers.h"
 
 #define TEST_DADDR (0xC0A80203)
+
+static bool debug;
+
+#define debugf(format, ...)				\
+do {							\
+	if (debug)					\
+		printf(format, ##__VA_ARGS__);		\
+} while (0)
 
 static int start_server(const struct sockaddr *addr, socklen_t len)
 {
@@ -49,6 +59,17 @@ out:
 	return fd;
 }
 
+static void handle_timeout(int signum)
+{
+	if (signum == SIGALRM)
+		log_err("Timed out while connecting to server");
+	kill(0, SIGKILL);
+}
+
+static struct sigaction timeout_action = {
+	.sa_handler = handle_timeout,
+};
+
 static int connect_to_server(const struct sockaddr *addr, socklen_t len)
 {
 	int fd = -1;
@@ -59,6 +80,12 @@ static int connect_to_server(const struct sockaddr *addr, socklen_t len)
 		goto out;
 	}
 
+	if (sigaction(SIGALRM, &timeout_action, NULL)) {
+		log_err("Failed to configure timeout signal");
+		goto out;
+	}
+
+	alarm(3);
 	if (connect(fd, addr, len) == -1) {
 		log_err("Fail to connect to server");
 		goto close_out;
@@ -141,6 +168,17 @@ int main(int argc, char **argv)
 	int server_v6 = -1;
 	int err = 1;
 
+	if (argc > 1) {
+		if (!memcmp(argv[1], "-h", 2)) {
+			printf("usage: %s.sh [FLAGS]\n", argv[0]);
+			printf("  -d\tEnable debug logs\n");
+			printf("  -h\tPrint help message\n");
+			exit(1);
+		}
+		if (!memcmp(argv[1], "-d", 2))
+			debug = true;
+	}
+
 	memset(&addr4, 0, sizeof(addr4));
 	addr4.sin_family = AF_INET;
 	addr4.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -166,9 +204,11 @@ int main(int argc, char **argv)
 
 	if (run_test(server, (const struct sockaddr *)&addr4, sizeof(addr4)))
 		goto out;
+	debugf("ipv4 port: ok\n");
 
 	if (run_test(server_v6, (const struct sockaddr *)&addr6, sizeof(addr6)))
 		goto out;
+	debugf("ipv6 port: ok\n");
 
 	/* Connect to unbound addresses */
 	addr4.sin_addr.s_addr = htonl(TEST_DADDR);
@@ -176,9 +216,11 @@ int main(int argc, char **argv)
 
 	if (run_test(server, (const struct sockaddr *)&addr4, sizeof(addr4)))
 		goto out;
+	debugf("ipv4 addr: ok\n");
 
 	if (run_test(server_v6, (const struct sockaddr *)&addr6, sizeof(addr6)))
 		goto out;
+	debugf("ipv6 addr: ok\n");
 
 	printf("ok\n");
 	err = 0;
