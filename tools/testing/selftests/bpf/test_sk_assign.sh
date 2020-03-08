@@ -12,6 +12,9 @@ if [[ -z $(ip netns identify $$) ]]; then
         exec ../net/in_netns.sh "$0" "$@"
 fi
 
+ip route add local default dev lo
+ip -6 route add local default dev lo
+
 tc qdisc add dev lo clsact
 tc filter add dev lo ingress bpf direct-action object-file ./test_sk_assign.o \
 	section "sk_assign_test"
