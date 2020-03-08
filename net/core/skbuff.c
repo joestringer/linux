@@ -63,6 +63,7 @@
 
 #include <net/protocol.h>
 #include <net/dst.h>
+#include <net/dst_metadata.h>
 #include <net/sock.h>
 #include <net/checksum.h>
 #include <net/ip6_checksum.h>
@@ -645,6 +646,8 @@ fastpath:
 
 void skb_release_head_state(struct sk_buff *skb)
 {
+	if (unlikely(skb_dst_is_sk_prefetch(skb)))
+		dst_sk_prefetch_fetch(skb);
 	skb_dst_drop(skb);
 	if (skb->destructor) {
 		WARN_ON(in_irq());
