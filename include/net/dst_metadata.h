@@ -230,7 +230,7 @@ static inline bool skb_dst_is_sk_prefetch(const struct sk_buff *skb)
 	return dst_is_sk_prefetch(skb_dst(skb));
 }
 
-void dst_sk_prefetch_store(struct sk_buff *skb);
+void dst_sk_prefetch_store(struct sk_buff *skb, struct sock *sk);
 void dst_sk_prefetch_fetch(struct sk_buff *skb);
 
 /**

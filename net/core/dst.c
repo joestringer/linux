@@ -346,11 +346,25 @@ EXPORT_SYMBOL(dst_sk_prefetch);
 
 DEFINE_PER_CPU(unsigned long, dst_sk_prefetch_dst);
 
-void dst_sk_prefetch_store(struct sk_buff *skb)
+void dst_sk_prefetch_store(struct sk_buff *skb, struct sock *sk)
 {
-	unsigned long refdst;
+	unsigned long refdst = 0L;
 
-	refdst = skb->_skb_refdst;
+	WARN_ON(!rcu_read_lock_held() &&
+		!rcu_read_lock_bh_held());
+	if (sk_fullsock(sk)) {
+		struct dst_entry *dst = READ_ONCE(sk->sk_rx_dst);
+
+		if (dst)
+			dst = dst_check(dst, 0);
+		if (dst)
+			refdst = (unsigned long)dst | SKB_DST_NOREF;
+	}
+	if (!refdst)
+		refdst = skb->_skb_refdst;
+	if (skb->_skb_refdst != refdst)
+		skb_dst_drop(skb);
+
 	__this_cpu_write(dst_sk_prefetch_dst, refdst);
 	skb_dst_set_noref(skb, (struct dst_entry *)&dst_sk_prefetch.dst);
 }

@@ -5858,7 +5858,7 @@ BPF_CALL_3(bpf_sk_assign, struct sk_buff *, skb, struct sock *, sk, u64, flags)
 	skb_orphan(skb);
 	skb->sk = sk;
 	skb->destructor = sock_edemux;
-	dst_sk_prefetch_store(skb);
+	dst_sk_prefetch_store(skb, sk);
 
 	return 0;
 }
