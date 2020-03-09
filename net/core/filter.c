@@ -5151,28 +5151,44 @@ static const struct bpf_func_proto bpf_lwt_seg6_adjust_srh_proto = {
 
 #ifdef CONFIG_INET
 static struct sock *sk_lookup_tcp(struct net *net, struct bpf_sock_tuple *tuple,
-				  int dif, int sdif, u8 family)
+				  int dif, int sdif, u8 family, u64 flags)
 {
-	bool refcounted = false;
+	bool established = !(flags & BPF_F_SKL_NO_EST);
+	bool listen = !(flags & BPF_F_SKL_NO_LISTEN);
+	bool refcounted = true;
 	struct sock *sk = NULL;
 
 	if (family == AF_INET) {
 		__be32 src4 = tuple->ipv4.saddr;
 		__be32 dst4 = tuple->ipv4.daddr;
+		__u16 hnum = ntohs(tuple->ipv4.dport);
 
-		sk = __inet_lookup(net, &tcp_hashinfo, NULL, 0,
-				   src4, tuple->ipv4.sport,
-				   dst4, tuple->ipv4.dport,
-				   dif, sdif, &refcounted);
+		if (established)
+			sk = __inet_lookup_established(net, &tcp_hashinfo,
+						       src4, tuple->ipv4.sport,
+						       dst4, hnum, dif, sdif);
+		if (!sk && listen) {
+			refcounted = false;
+			sk = __inet_lookup_listener(net, &tcp_hashinfo, NULL, 0, src4,
+						    tuple->ipv4.sport, dst4, hnum, dif,
+						    sdif);
+		}
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		struct in6_addr *src6 = (struct in6_addr *)&tuple->ipv6.saddr;
 		struct in6_addr *dst6 = (struct in6_addr *)&tuple->ipv6.daddr;
+		__u16 hnum = ntohs(tuple->ipv6.dport);
 
-		sk = __inet6_lookup(net, &tcp_hashinfo, NULL, 0,
-				    src6, tuple->ipv6.sport,
-				    dst6, ntohs(tuple->ipv6.dport),
-				    dif, sdif, &refcounted);
+		if (established)
+			sk = __inet6_lookup_established(net, &tcp_hashinfo,
+							src6, tuple->ipv6.sport,
+							dst6, hnum, dif, sdif);
+		if (!sk && listen) {
+			refcounted = false;
+			sk = inet6_lookup_listener(net, &tcp_hashinfo, NULL,
+						   0, src6, tuple->ipv6.sport,
+						   dst6, hnum, dif, sdif);
+		}
 #endif
 	}
 
@@ -5184,8 +5200,10 @@ static struct sock *sk_lookup_tcp(struct net *net, struct bpf_sock_tuple *tuple,
 }
 
 static struct sock *sk_lookup_udp(struct net *net, struct bpf_sock_tuple *tuple,
-				  int dif, int sdif, u8 family)
+				  int dif, int sdif, u8 family, u64 flags)
 {
+	bool listen = !(flags & BPF_F_SKL_NO_EST);
+	bool established = !(flags & BPF_F_SKL_NO_LISTEN);
 	struct sock *sk = NULL;
 
 	if (family == AF_INET) {
@@ -5209,17 +5227,39 @@ static struct sock *sk_lookup_udp(struct net *net, struct bpf_sock_tuple *tuple,
 #endif
 	}
 
+	/* Filter out types of sockets if they're excluded by flags */
+	if (sk && (!listen || !established)) {
+		bool connected = (sk->sk_state == TCP_ESTABLISHED);
+		bool wildcard;
+
+		if (family == AF_INET)
+			wildcard = (inet_sk(sk)->inet_rcv_saddr == 0);
+#if IS_ENABLED(CONFIG_IPV6)
+		else
+			wildcard = ipv6_addr_any(&sk->sk_v6_rcv_saddr);
+#endif
+
+		if ((established && (!connected || wildcard)) ||
+		    (listen && connected))
+			sk = NULL;
+	}
+
 	return sk;
 }
 
 static struct sock *sk_lookup(struct net *net, struct bpf_sock_tuple *tuple,
-			      int dif, int sdif, u8 family, u8 proto)
+			      int dif, int sdif, u8 family, u8 proto,
+			      u64 flags)
 {
+	if (unlikely((flags & BPF_F_SKL_NO_EST) &&
+		     (flags & BPF_F_SKL_NO_LISTEN)))
+		return NULL;
+
 	switch (proto) {
 	case IPPROTO_TCP:
-		return sk_lookup_tcp(net, tuple, dif, sdif, family);
+		return sk_lookup_tcp(net, tuple, dif, sdif, family, flags);
 	case IPPROTO_UDP:
-		return sk_lookup_udp(net, tuple, dif, sdif, family);
+		return sk_lookup_udp(net, tuple, dif, sdif, family, flags);
 	}
 	return NULL;
 }
@@ -5246,7 +5286,10 @@ bpf_skc_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
 	else
 		return NULL;
 
-	if (unlikely(family == AF_UNSPEC || flags ||
+#define VALID_SK_LOOKUP_FLAGS \
+	(BPF_F_SKL_NO_EST | BPF_F_SKL_NO_LISTEN)
+
+	if (unlikely(family == AF_UNSPEC || (flags & ~VALID_SK_LOOKUP_FLAGS) ||
 		     !((s32)netns_id < 0 || netns_id <= S32_MAX)))
 		goto out;
 
@@ -5257,12 +5300,12 @@ bpf_skc_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
 
 	if ((s32)netns_id < 0) {
 		net = caller_net;
-		sk = sk_lookup(net, tuple, ifindex, sdif, family, proto);
+		sk = sk_lookup(net, tuple, ifindex, sdif, family, proto, flags);
 	} else {
 		net = get_net_ns_by_id(caller_net, netns_id);
 		if (unlikely(!net))
 			goto out;
-		sk = sk_lookup(net, tuple, ifindex, sdif, family, proto);
+		sk = sk_lookup(net, tuple, ifindex, sdif, family, proto, flags);
 		put_net(net);
 	}
 
