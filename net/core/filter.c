@@ -5150,8 +5150,8 @@ static const struct bpf_func_proto bpf_lwt_seg6_adjust_srh_proto = {
 #endif /* CONFIG_IPV6_SEG6_BPF */
 
 #ifdef CONFIG_INET
-static struct sock *sk_lookup(struct net *net, struct bpf_sock_tuple *tuple,
-			      int dif, int sdif, u8 family, u8 proto)
+static struct sock *sk_lookup_tcp(struct net *net, struct bpf_sock_tuple *tuple,
+				  int dif, int sdif, u8 family)
 {
 	bool refcounted = false;
 	struct sock *sk = NULL;
@@ -5160,31 +5160,19 @@ static struct sock *sk_lookup(struct net *net, struct bpf_sock_tuple *tuple,
 		__be32 src4 = tuple->ipv4.saddr;
 		__be32 dst4 = tuple->ipv4.daddr;
 
-		if (proto == IPPROTO_TCP)
-			sk = __inet_lookup(net, &tcp_hashinfo, NULL, 0,
-					   src4, tuple->ipv4.sport,
-					   dst4, tuple->ipv4.dport,
-					   dif, sdif, &refcounted);
-		else
-			sk = __udp4_lib_lookup(net, src4, tuple->ipv4.sport,
-					       dst4, tuple->ipv4.dport,
-					       dif, sdif, &udp_table, NULL);
+		sk = __inet_lookup(net, &tcp_hashinfo, NULL, 0,
+				   src4, tuple->ipv4.sport,
+				   dst4, tuple->ipv4.dport,
+				   dif, sdif, &refcounted);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		struct in6_addr *src6 = (struct in6_addr *)&tuple->ipv6.saddr;
 		struct in6_addr *dst6 = (struct in6_addr *)&tuple->ipv6.daddr;
 
-		if (proto == IPPROTO_TCP)
-			sk = __inet6_lookup(net, &tcp_hashinfo, NULL, 0,
-					    src6, tuple->ipv6.sport,
-					    dst6, ntohs(tuple->ipv6.dport),
-					    dif, sdif, &refcounted);
-		else if (likely(ipv6_bpf_stub))
-			sk = ipv6_bpf_stub->udp6_lib_lookup(net,
-							    src6, tuple->ipv6.sport,
-							    dst6, tuple->ipv6.dport,
-							    dif, sdif,
-							    &udp_table, NULL);
+		sk = __inet6_lookup(net, &tcp_hashinfo, NULL, 0,
+				    src6, tuple->ipv6.sport,
+				    dst6, ntohs(tuple->ipv6.dport),
+				    dif, sdif, &refcounted);
 #endif
 	}
 
@@ -5193,6 +5181,47 @@ static struct sock *sk_lookup(struct net *net, struct bpf_sock_tuple *tuple,
 		sk = NULL;
 	}
 	return sk;
+}
+
+static struct sock *sk_lookup_udp(struct net *net, struct bpf_sock_tuple *tuple,
+				  int dif, int sdif, u8 family)
+{
+	struct sock *sk = NULL;
+
+	if (family == AF_INET) {
+		__be32 src4 = tuple->ipv4.saddr;
+		__be32 dst4 = tuple->ipv4.daddr;
+
+		sk = __udp4_lib_lookup(net, src4, tuple->ipv4.sport,
+				       dst4, tuple->ipv4.dport,
+				       dif, sdif, &udp_table, NULL);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+		struct in6_addr *src6 = (struct in6_addr *)&tuple->ipv6.saddr;
+		struct in6_addr *dst6 = (struct in6_addr *)&tuple->ipv6.daddr;
+
+		if (likely(ipv6_bpf_stub))
+			sk = ipv6_bpf_stub->udp6_lib_lookup(net,
+							    src6, tuple->ipv6.sport,
+							    dst6, tuple->ipv6.dport,
+							    dif, sdif,
+							    &udp_table, NULL);
+#endif
+	}
+
+	return sk;
+}
+
+static struct sock *sk_lookup(struct net *net, struct bpf_sock_tuple *tuple,
+			      int dif, int sdif, u8 family, u8 proto)
+{
+	switch (proto) {
+	case IPPROTO_TCP:
+		return sk_lookup_tcp(net, tuple, dif, sdif, family);
+	case IPPROTO_UDP:
+		return sk_lookup_udp(net, tuple, dif, sdif, family);
+	}
+	return NULL;
 }
 
 /* bpf_skc_lookup performs the core lookup for different types of sockets,
