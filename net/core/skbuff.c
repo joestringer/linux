@@ -1035,6 +1035,21 @@ struct sk_buff *alloc_skb_for_msg(struct sk_buff *first)
 EXPORT_SYMBOL_GPL(alloc_skb_for_msg);
 
 /**
+ * skb_dst_drop - drops skb dst
+ * @skb: buffer
+ *
+ * Drops dst reference count if a reference was taken.
+ */
+void skb_dst_drop(struct sk_buff *skb)
+{
+	if (skb->_skb_refdst) {
+		refdst_drop(skb->_skb_refdst);
+		skb->_skb_refdst = 0UL;
+	}
+}
+EXPORT_SYMBOL_GPL(skb_dst_drop);
+
+/**
  *	skb_morph	-	morph one skb into another
  *	@dst: the skb to receive the contents
  *	@src: the skb to supply the contents

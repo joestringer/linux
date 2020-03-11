@@ -259,20 +259,6 @@ static inline void refdst_drop(unsigned long refdst)
 		dst_release((struct dst_entry *)(refdst & SKB_DST_PTRMASK));
 }
 
-/**
- * skb_dst_drop - drops skb dst
- * @skb: buffer
- *
- * Drops dst reference count if a reference was taken.
- */
-static inline void skb_dst_drop(struct sk_buff *skb)
-{
-	if (skb->_skb_refdst) {
-		refdst_drop(skb->_skb_refdst);
-		skb->_skb_refdst = 0UL;
-	}
-}
-
 static inline void __skb_dst_copy(struct sk_buff *nskb, unsigned long refdst)
 {
 	nskb->_skb_refdst = refdst;
