@@ -63,6 +63,7 @@
 
 #include <net/protocol.h>
 #include <net/dst.h>
+#include <net/dst_metadata.h>
 #include <net/sock.h>
 #include <net/checksum.h>
 #include <net/ip6_checksum.h>
@@ -1042,6 +1043,7 @@ EXPORT_SYMBOL_GPL(alloc_skb_for_msg);
  */
 void skb_dst_drop(struct sk_buff *skb)
 {
+	dst_sk_prefetch_reset(skb);
 	if (skb->_skb_refdst) {
 		refdst_drop(skb->_skb_refdst);
 		skb->_skb_refdst = 0UL;
@@ -1466,6 +1468,7 @@ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
 		n->fclone = SKB_FCLONE_UNAVAILABLE;
 	}
 
+	dst_sk_prefetch_reset(skb);
 	return __skb_clone(n, skb);
 }
 EXPORT_SYMBOL(skb_clone);
