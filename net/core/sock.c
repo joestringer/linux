@@ -2076,7 +2076,8 @@ EXPORT_SYMBOL(sock_efree);
  */
 void sock_pfree(struct sk_buff *skb)
 {
-	sock_edemux(skb);
+	if (sk_is_refcounted(skb->sk))
+		sock_edemux(skb);
 }
 EXPORT_SYMBOL(sock_pfree);
 
