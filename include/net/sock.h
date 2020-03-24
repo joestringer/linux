@@ -1657,6 +1657,7 @@ struct sk_buff *sock_omalloc(struct sock *sk, unsigned long size,
 void skb_orphan_partial(struct sk_buff *skb);
 void sock_rfree(struct sk_buff *skb);
 void sock_efree(struct sk_buff *skb);
+void sock_pfree(struct sk_buff *skb);
 #ifdef CONFIG_INET
 void sock_edemux(struct sk_buff *skb);
 #else
@@ -2524,6 +2525,12 @@ static inline
 void sock_net_set(struct sock *sk, struct net *net)
 {
 	write_pnet(&sk->sk_net, net);
+}
+
+static inline bool
+skb_sk_is_prefetched(struct sk_buff *skb)
+{
+	return skb->destructor == sock_pfree;
 }
 
 static inline struct sock *skb_steal_sock(struct sk_buff *skb)
