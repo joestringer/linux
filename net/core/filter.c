@@ -5876,6 +5876,21 @@ BPF_CALL_3(bpf_sk_assign, struct sk_buff *, skb, struct sock *, sk, u64, flags)
 	skb_orphan(skb);
 	skb->sk = sk;
 	skb->destructor = sock_pfree;
+	if (sk_fullsock(sk)) {
+		struct dst_entry *dst = READ_ONCE(sk->sk_rx_dst);
+		u32 cookie = 0;
+
+#if IS_ENABLED(CONFIG_IPV6)
+		if (sk->sk_family == AF_INET6)
+			cookie = inet6_sk(sk)->rx_dst_cookie;
+#endif
+		if (dst)
+			dst = dst_check(dst, cookie);
+		if (dst) {
+			skb_dst_drop(skb);
+			skb_dst_set_noref(skb, dst);
+		}
+	}
 
 	return 0;
 }
