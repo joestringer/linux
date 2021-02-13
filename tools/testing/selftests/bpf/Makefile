@@ -230,6 +230,14 @@ else
 	$(Q)cp "$(VMLINUX_H)" $@
 endif
 
+docs:
+	$(Q)mkdir -p $(BUILD_DIR)/Documentation
+	$(Q)RST2MAN_OPTS="--exit-status=1" $(MAKE) $(submake_extras)	\
+		    -C $(TOOLSDIR)/bpf					\
+		    -f Makefile.docs					\
+		    OUTPUT=$(BUILD_DIR)/Documentation/			\
+		    prefix= DESTDIR=$(SCRATCH_DIR)/ docs-install
+
 $(RESOLVE_BTFIDS): $(HOST_BPFOBJ) | $(HOST_BUILD_DIR)/resolve_btfids	\
 		       $(TOOLSDIR)/bpf/resolve_btfids/main.c	\
 		       $(TOOLSDIR)/lib/rbtree.c			\
