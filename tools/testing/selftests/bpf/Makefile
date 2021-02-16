@@ -68,6 +68,7 @@ TEST_PROGS := test_kmod.sh \
 	test_bpftool_build.sh \
 	test_bpftool.sh \
 	test_bpftool_metadata.sh \
+	test_docs_build.sh \
 	test_xsk.sh
 
 TEST_PROGS_EXTENDED := with_addr.sh \
@@ -200,11 +201,6 @@ $(DEFAULT_BPFTOOL): $(wildcard $(BPFTOOLDIR)/*.[ch] $(BPFTOOLDIR)/Makefile)    \
 		    CC=$(HOSTCC) LD=$(HOSTLD)				       \
 		    OUTPUT=$(HOST_BUILD_DIR)/bpftool/			       \
 		    prefix= DESTDIR=$(HOST_SCRATCH_DIR)/ install
-	$(Q)mkdir -p $(BUILD_DIR)/bpftool/Documentation
-	$(Q)RST2MAN_OPTS="--exit-status=1" $(MAKE) $(submake_extras)	       \
-		    -C $(BPFTOOLDIR)/Documentation			       \
-		    OUTPUT=$(BUILD_DIR)/bpftool/Documentation/		       \
-		    prefix= DESTDIR=$(SCRATCH_DIR)/ install
 
 $(BPFOBJ): $(wildcard $(BPFDIR)/*.[ch] $(BPFDIR)/Makefile)		       \
 	   ../../../include/uapi/linux/bpf.h                                   \
