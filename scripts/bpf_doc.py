@@ -183,25 +183,50 @@ class HeaderParser(object):
         self.reader.readline()
         self.line = self.reader.readline()
 
+    def get_elem_count(self, target):
+        self.seek_to(target, 'Could not find structure "%s"' % target)
+        end_re = re.compile('^$')
+        count = 0
+        while True:
+            capture = end_re.match(self.line)
+            if capture:
+                break
+            self.line = self.reader.readline()
+            count += 1
+
+        return count
+
     def parse_syscall(self):
+        symbol = 'enum bpf_cmd'
+        count = self.get_elem_count(symbol)
         self.seek_to('* DOC: eBPF Syscall Commands',
                      'Could not find start of eBPF syscall descriptions list')
+        i = 0
         while True:
+            i += 1
             try:
                 command = self.parse_element()
                 self.commands.append(command)
             except NoSyscallCommandFound:
                 break
+        if i < count:
+            raise ParsingError('Parsed %d symbols from %s, expected %d' % (i, symbol, count))
 
     def parse_helpers(self):
+        symbol = '__BPF_FUNC_MAPPER'
+        count = self.get_elem_count(symbol)
         self.seek_to('* Start of BPF helper function descriptions:',
                      'Could not find start of eBPF helper descriptions list')
+        i = 0
         while True:
+            i += 1
             try:
                 helper = self.parse_helper()
                 self.helpers.append(helper)
             except NoHelperFound:
                 break
+        if i < count:
+            raise ParsingError('Parsed %d symbols from %s, expected %d' % (i, symbol, count))
 
     def run(self):
         self.parse_syscall()
