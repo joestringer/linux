@@ -1186,7 +1186,11 @@ enum {
 	BPF_ANY		= 0, /* create new element or update existing */
 	BPF_NOEXIST	= 1, /* create new element if it didn't exist */
 	BPF_EXIST	= 2, /* update existing element */
-	BPF_F_LOCK	= 4, /* spin_lock-ed map_lookup/map_update */
+
+	/* spin_lock-ed map_lookup/map_update */
+	BPF_F_LOCK	= (1U << 2),
+	/* return -EINPROGRESS on successful LRU replace */
+	BPF_F_PRESSURE	= (1U << 3),
 };
 
 /* flags for BPF_MAP_CREATE command */
@@ -1570,6 +1574,13 @@ union bpf_attr {
  * 			The entry for *key* must already exist in the map.
  * 		**BPF_ANY**
  * 			No condition on the existence of the entry for *key*.
+ * 		**BPF_F_PRESSURE**
+ * 			If the update would successfully replace an existing
+ * 			entry per the map properties, this helper replaces the
+ * 			entry and returns **-EINPROGRESS**. This flag is only
+ * 			valid for the following map types:
+ * 			* **BPF_MAP_TYPE_LRU_HASH**
+ * 			* **BPF_MAP_TYPE_LRU_PERCPU_HASH**
  *
  * 		Flag value **BPF_NOEXIST** cannot be used for maps of types
  * 		**BPF_MAP_TYPE_ARRAY** or **BPF_MAP_TYPE_PERCPU_ARRAY**  (all

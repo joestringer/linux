@@ -1027,11 +1027,11 @@ dec_count:
 static int check_flags(struct bpf_htab *htab, struct htab_elem *l_old,
 		       u64 map_flags)
 {
-	if (l_old && (map_flags & ~BPF_F_LOCK) == BPF_NOEXIST)
+	if (l_old && (map_flags & ~(BPF_F_LOCK|BPF_F_PRESSURE)) == BPF_NOEXIST)
 		/* elem already exists */
 		return -EEXIST;
 
-	if (!l_old && (map_flags & ~BPF_F_LOCK) == BPF_EXIST)
+	if (!l_old && (map_flags & ~(BPF_F_LOCK|BPF_F_PRESSURE)) == BPF_EXIST)
 		/* elem doesn't exist, cannot update it */
 		return -ENOENT;
 
@@ -1152,7 +1152,9 @@ static int htab_lru_map_update_elem(struct bpf_map *map, void *key, void *value,
 	u32 key_size, hash;
 	int ret;
 
-	if (unlikely(map_flags > BPF_EXIST))
+	if (unlikely(map_flags & ~(BPF_NOEXIST |
+				   BPF_EXIST |
+				   BPF_F_PRESSURE)))
 		/* unknown flags */
 		return -EINVAL;
 
@@ -1196,6 +1198,8 @@ static int htab_lru_map_update_elem(struct bpf_map *map, void *key, void *value,
 		hlist_nulls_del_rcu(&l_old->hash_node);
 	}
 	ret = 0;
+	if (l_old && (map_flags & BPF_F_PRESSURE))
+		ret = -EINPROGRESS;
 
 err:
 	htab_unlock_bucket(htab, b, hash, flags);
@@ -1275,7 +1279,9 @@ static int __htab_lru_percpu_map_update_elem(struct bpf_map *map, void *key,
 	u32 key_size, hash;
 	int ret;
 
-	if (unlikely(map_flags > BPF_EXIST))
+	if (unlikely(map_flags & ~(BPF_NOEXIST |
+				   BPF_EXIST |
+				   BPF_F_PRESSURE)))
 		/* unknown flags */
 		return -EINVAL;
 
@@ -1323,6 +1329,8 @@ static int __htab_lru_percpu_map_update_elem(struct bpf_map *map, void *key,
 		l_new = NULL;
 	}
 	ret = 0;
+	if (l_old && (map_flags & BPF_F_PRESSURE))
+		ret = -EINPROGRESS;
 err:
 	htab_unlock_bucket(htab, b, hash, flags);
 	if (l_new)
